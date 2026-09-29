@@ -6,6 +6,7 @@ Rate limit is roughly 50 requests / 5 seconds per IP (config.DEEZER_MAX_REQUESTS
 """
 from __future__ import annotations
 
+import logging
 import time
 from collections import deque
 from dataclasses import dataclass
@@ -16,6 +17,8 @@ import httpx
 
 import config
 from db import repo
+
+logger = logging.getLogger(__name__)
 
 _client = httpx.Client(base_url=config.DEEZER_BASE_URL, timeout=10.0)
 
@@ -43,6 +46,7 @@ def _get(path: str, params: Optional[dict] = None, retries: int = 3) -> dict:
         try:
             resp = _client.get(path, params=params)
             if resp.status_code == 429:
+                logger.warning("Deezer rate limited on %s (attempt %d/%d)", path, attempt + 1, retries)
                 time.sleep(2**attempt)
                 continue
             resp.raise_for_status()
@@ -52,8 +56,13 @@ def _get(path: str, params: Optional[dict] = None, retries: int = 3) -> dict:
             return data
         except (httpx.HTTPError, DeezerAPIError) as exc:
             last_error = exc
+            logger.warning("Deezer request to %s failed (attempt %d/%d): %s", path, attempt + 1, retries, exc)
             time.sleep(2**attempt)
-    raise DeezerAPIError(f"Deezer request to {path} failed after {retries} retries") from last_error
+    logger.error("Deezer request to %s failed after %d retries -- is Deezer down?", path, retries)
+    raise DeezerAPIError(
+        f"Deezer request to {path} failed after {retries} retries -- Deezer may be down or "
+        "rate-limiting this IP. Check https://developers.deezer.com for status."
+    ) from last_error
 
 
 class DeezerAPIError(Exception):

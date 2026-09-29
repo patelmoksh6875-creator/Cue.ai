@@ -184,7 +184,11 @@ def _apply_diversity(ranked: list[RankedResult], max_per_artist: int) -> list[Ra
 
 
 def score_pair(track_a: deezer.DeezerTrack, track_b: deezer.DeezerTrack) -> scoring.ScoreBreakdown:
-    """Second mode: user picks both songs, we score the pair directly."""
+    """Second mode: user picks both songs, we score the pair directly.
+    Ensures both tracks are persisted (foreign-key requirement for
+    audio_features) even if the caller passed unpersisted search stubs."""
+    track_a = deezer.get_track_detail(track_a.id)
+    track_b = deezer.get_track_detail(track_b.id)
     features_a = _analyze_candidate(track_a)
     features_b = _analyze_candidate(track_b)
     bpm_a = features_a.bpm if features_a else track_a.bpm

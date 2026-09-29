@@ -7,6 +7,7 @@ https://www.last.fm/api/show/track.getSimilar
 """
 from __future__ import annotations
 
+import logging
 import time
 from collections import deque
 from dataclasses import dataclass
@@ -14,6 +15,8 @@ from dataclasses import dataclass
 import httpx
 
 import config
+
+logger = logging.getLogger(__name__)
 
 _client = httpx.Client(base_url=config.LASTFM_BASE_URL, timeout=10.0)
 _request_times: deque[float] = deque()
@@ -56,6 +59,7 @@ def _get(method: str, params: dict, retries: int = 3) -> dict:
         try:
             resp = _client.get("", params=query)
             if resp.status_code == 429:
+                logger.warning("Last.fm rate limited on %s (attempt %d/%d)", method, attempt + 1, retries)
                 time.sleep(2**attempt)
                 continue
             resp.raise_for_status()
@@ -65,8 +69,14 @@ def _get(method: str, params: dict, retries: int = 3) -> dict:
             return data
         except (httpx.HTTPError, LastFMError) as exc:
             last_error = exc
+            logger.warning("Last.fm request %s failed (attempt %d/%d): %s", method, attempt + 1, retries, exc)
             time.sleep(2**attempt)
-    raise LastFMError(f"Last.fm request {method} failed after {retries} retries") from last_error
+    logger.error("Last.fm request %s failed after %d retries -- is Last.fm down?", method, retries)
+    raise LastFMError(
+        f"Last.fm request {method} failed after {retries} retries -- Last.fm may be down, "
+        "the API key may be invalid, or this endpoint name may have changed. Check "
+        "https://www.last.fm/api for current status and docs."
+    ) from last_error
 
 
 @dataclass

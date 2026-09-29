@@ -6,12 +6,18 @@ that use it.
 """
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 
 from dotenv import load_dotenv
 
 load_dotenv()
+
+logging.basicConfig(
+    level=os.getenv("LOG_LEVEL", "INFO"),
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
 
 # --- Paths -------------------------------------------------------------
 BASE_DIR = Path(__file__).resolve().parent
@@ -49,7 +55,10 @@ BPM_TOLERANCE_PCT = 0.06
 # Also match half-time / double-time relationships within the same tolerance.
 BPM_HALF_DOUBLE_MATCHING = True
 
-# --- Scoring weights (must sum to 1.0; enforced in matching/scoring.py) ----
+# --- Scoring weights -------------------------------------------------------
+# Relative weights, not required to sum to 1.0: matching/scoring.py
+# renormalizes over whatever components are actually available for a given
+# track (e.g. no tags), so only the ratios between these matter.
 SCORE_WEIGHTS = {
     "bpm": 0.30,
     "key": 0.25,

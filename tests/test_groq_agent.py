@@ -102,3 +102,27 @@ def test_expand_vibe_query_falls_back_on_malformed_json(monkeypatch):
     monkeypatch.setattr(groq_agent, "_call_with_fallback", lambda *a, **k: "not json")
     result = groq_agent.expand_vibe_query("summer vibe")
     assert result.queries == ["summer vibe"]
+
+
+def test_cheap_model_used_when_offered(monkeypatch):
+    monkeypatch.setattr(groq_agent, "_offered_models", lambda: {config_module().GROQ_MODEL_CHEAP})
+    assert groq_agent._cheap_model_if_available() == [config_module().GROQ_MODEL_CHEAP]
+
+
+def test_cheap_model_falls_back_to_ordered_chain_when_deprecated(monkeypatch):
+    monkeypatch.setattr(groq_agent, "_offered_models", lambda: {config_module().GROQ_MODEL_PRIMARY})
+    monkeypatch.setattr(groq_agent, "_refresh_available_models", lambda: [config_module().GROQ_MODEL_PRIMARY])
+    assert groq_agent._cheap_model_if_available() == [config_module().GROQ_MODEL_PRIMARY]
+
+
+def test_expand_vibe_query_requests_cheap_model(monkeypatch):
+    captured = {}
+
+    def fake_call_with_fallback(build_messages, max_tokens, models=None):
+        captured["models"] = models
+        return None
+
+    monkeypatch.setattr(groq_agent, "_call_with_fallback", fake_call_with_fallback)
+    monkeypatch.setattr(groq_agent, "_cheap_model_if_available", lambda: ["cheap-model"])
+    groq_agent.expand_vibe_query("summer vibe")
+    assert captured["models"] == ["cheap-model"]

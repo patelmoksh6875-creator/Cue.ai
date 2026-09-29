@@ -21,6 +21,7 @@ except ImportError:  # groq is optional at import time too
     Groq = None  # type: ignore
 
 _client: Optional["Groq"] = None
+_offered_model_ids: Optional[set[str]] = None
 _available_models: Optional[list[str]] = None
 
 
@@ -33,35 +34,56 @@ def _get_client() -> Optional["Groq"]:
     return _client
 
 
-def _refresh_available_models() -> list[str]:
-    """Call Groq's list-models endpoint once per process and drop any
-    configured model Groq no longer offers, since Groq has deprecated
-    models before without much notice."""
-    global _available_models
-    if _available_models is not None:
-        return _available_models
+def _offered_models() -> set[str]:
+    """Call Groq's list-models endpoint once per process, since Groq has
+    deprecated models before without much notice."""
+    global _offered_model_ids
+    if _offered_model_ids is not None:
+        return _offered_model_ids
     client = _get_client()
     if client is None:
-        _available_models = []
-        return _available_models
+        _offered_model_ids = set()
+        return _offered_model_ids
     try:
         response = client.models.list()
-        offered = {m.id for m in response.data}
-        _available_models = [m for m in config.GROQ_MODELS_ORDERED if m in offered]
+        _offered_model_ids = {m.id for m in response.data}
     except Exception:
         # If we can't even list models, assume nothing is safely usable
         # and let the deterministic fallback handle everything.
-        _available_models = []
+        _offered_model_ids = set()
+    return _offered_model_ids
+
+
+def _refresh_available_models() -> list[str]:
+    """The primary/fallback chain, filtered to models Groq still offers."""
+    global _available_models
+    if _available_models is not None:
+        return _available_models
+    offered = _offered_models()
+    _available_models = [m for m in config.GROQ_MODELS_ORDERED if m in offered]
     return _available_models
 
 
-def _call_with_fallback(build_messages, max_tokens: int) -> Optional[str]:
+def _cheap_model_if_available() -> list[str]:
+    """The cheap 8B model, used for low-stakes query expansion -- falls
+    back to the primary/fallback chain if it's been deprecated."""
+    if config.GROQ_MODEL_CHEAP in _offered_models():
+        return [config.GROQ_MODEL_CHEAP]
+    return _refresh_available_models()
+
+
+def _call_with_fallback(
+    build_messages, max_tokens: int, models: Optional[list[str]] = None
+) -> Optional[str]:
     """Try each configured model in order; fall back to None (deterministic
-    path) if every model fails (rate limit, deprecation, or no client)."""
+    path) if every model fails (rate limit, deprecation, or no client).
+    `models` defaults to the primary/fallback chain; pass a specific model
+    list (e.g. [GROQ_MODEL_CHEAP]) for smaller, lower-stakes tasks."""
     client = _get_client()
     if client is None:
         return None
-    for model in _refresh_available_models():
+    candidate_models = models if models is not None else _refresh_available_models()
+    for model in candidate_models:
         try:
             resp = client.chat.completions.create(
                 model=model,
@@ -109,7 +131,7 @@ def expand_vibe_query(vibe_text: str) -> QueryExpansion:
             {"role": "user", "content": vibe_text},
         ]
 
-    raw = _call_with_fallback(build_messages, max_tokens=200)
+    raw = _call_with_fallback(build_messages, max_tokens=200, models=_cheap_model_if_available())
     if raw is None:
         return _deterministic_expand(vibe_text)
 

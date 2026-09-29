@@ -1,6 +1,8 @@
 from matching import candidates
 from sources.deezer import DeezerTrack
 
+import pytest
+
 
 def _track(id, title, artist_id=1, artist_name="Artist", isrc=None, bpm=None):
     return DeezerTrack(
@@ -93,3 +95,43 @@ def test_apply_diversity_caps_per_artist():
     artist_1_count = sum(1 for r in kept if r.track.artist_id == 1)
     assert artist_1_count == 2
     assert len(kept) == 3
+
+
+# --- resolve_to_deezer (fuzzy matching) -------------------------------------
+
+
+def test_resolve_to_deezer_picks_best_fuzzy_match(monkeypatch):
+    candidates_pool = [
+        _track(1, "One More Time", artist_name="Daft Punk"),
+        _track(2, "Around the World", artist_name="Daft Punk"),
+    ]
+    monkeypatch.setattr(
+        candidates.deezer, "search_tracks", lambda query, limit=5: candidates_pool
+    )
+    result = candidates.resolve_to_deezer("Daft Punk", "One More Time (feat. Nobody)")
+    assert result.id == 1
+
+
+def test_resolve_to_deezer_handles_punctuation_differences(monkeypatch):
+    candidates_pool = [_track(1, "Don't Stop Believin'", artist_name="Journey")]
+    monkeypatch.setattr(
+        candidates.deezer, "search_tracks", lambda query, limit=5: candidates_pool
+    )
+    result = candidates.resolve_to_deezer("Journey", "Dont Stop Believin")
+    assert result is not None
+    assert result.id == 1
+
+
+def test_resolve_to_deezer_returns_none_below_threshold(monkeypatch):
+    candidates_pool = [_track(1, "Completely Different Song", artist_name="Someone Else")]
+    monkeypatch.setattr(
+        candidates.deezer, "search_tracks", lambda query, limit=5: candidates_pool
+    )
+    result = candidates.resolve_to_deezer("Daft Punk", "One More Time")
+    assert result is None
+
+
+def test_resolve_to_deezer_returns_none_when_no_results(monkeypatch):
+    monkeypatch.setattr(candidates.deezer, "search_tracks", lambda query, limit=5: [])
+    result = candidates.resolve_to_deezer("Nobody", "Nothing")
+    assert result is None
