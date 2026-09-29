@@ -145,7 +145,10 @@ def _analyze_candidate(track: deezer.DeezerTrack) -> audio.AnalysisResult | None
             camelot=cached.camelot,
             energy=cached.energy,
         )
-    preview_url = deezer.get_fresh_preview_url(track.id)
+    # get_track_detail() already returned a fresh preview URL moments ago
+    # in the same request chain -- reuse it instead of hitting Deezer
+    # again just to re-extract the same field a few seconds later.
+    preview_url = track.preview_url or deezer.get_fresh_preview_url(track.id)
     if not preview_url:
         return None
     try:

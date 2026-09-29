@@ -67,6 +67,9 @@ def test_get_track_detail_persists_via_repo(monkeypatch):
     track = deezer.get_track_detail(1)
     assert track.genre == "House"
 
+    stored_album = repo.get_album(20)
+    assert stored_album.title == "Test Album"  # must not be blanked to ""
+
     stored = repo.get_track(1)
     assert stored is not None
     assert stored.title == "Test Song"

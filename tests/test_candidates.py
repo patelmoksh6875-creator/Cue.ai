@@ -135,3 +135,45 @@ def test_resolve_to_deezer_returns_none_when_no_results(monkeypatch):
     monkeypatch.setattr(candidates.deezer, "search_tracks", lambda query, limit=5: [])
     result = candidates.resolve_to_deezer("Nobody", "Nothing")
     assert result is None
+
+
+# --- _analyze_candidate reuses an already-fetched preview URL --------------
+
+
+def test_analyze_candidate_reuses_preview_url_from_track(monkeypatch, tmp_path):
+    monkeypatch.setattr(candidates.repo, "get_audio_features", lambda track_id: None)
+    monkeypatch.setattr(
+        candidates.repo, "upsert_audio_features", lambda features: None
+    )
+
+    def fail_if_called(track_id):
+        raise AssertionError("should not re-fetch preview URL when track already has one")
+
+    monkeypatch.setattr(candidates.deezer, "get_fresh_preview_url", fail_if_called)
+
+    from analysis.audio import AnalysisResult
+
+    captured = {}
+
+    def fake_analyze(preview_url, deezer_bpm=None):
+        captured["preview_url"] = preview_url
+        return AnalysisResult(bpm=128.0, bpm_confidence=0.9, key="C major", camelot="8B", energy=0.5)
+
+    monkeypatch.setattr(candidates.audio, "analyze_preview", fake_analyze)
+
+    track = _track(1, "Song", bpm=128)
+    track.preview_url = "https://example.com/preview.mp3"
+    result = candidates._analyze_candidate(track)
+
+    assert result is not None
+    assert captured["preview_url"] == "https://example.com/preview.mp3"
+
+
+def test_analyze_candidate_falls_back_to_fresh_fetch_when_no_preview_url(monkeypatch):
+    monkeypatch.setattr(candidates.repo, "get_audio_features", lambda track_id: None)
+    monkeypatch.setattr(candidates.deezer, "get_fresh_preview_url", lambda track_id: None)
+
+    track = _track(1, "Song", bpm=128)
+    assert track.preview_url is None
+    result = candidates._analyze_candidate(track)
+    assert result is None

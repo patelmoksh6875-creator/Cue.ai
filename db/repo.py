@@ -114,17 +114,13 @@ class MatchRun:
 # --- Artists -------------------------------------------------------------
 
 
-def upsert_artist(artist: Artist, conn: sqlite3.Connection | None = None) -> None:
+def upsert_artist(artist: Artist) -> None:
     sql = """
         INSERT INTO artists (id, name) VALUES (:id, :name)
         ON CONFLICT(id) DO UPDATE SET name = excluded.name
     """
-    params = {"id": artist.id, "name": artist.name}
-    if conn is not None:
-        conn.execute(sql, params)
-    else:
-        with get_connection() as c:
-            c.execute(sql, params)
+    with get_connection() as conn:
+        conn.execute(sql, {"id": artist.id, "name": artist.name})
 
 
 def get_artist(artist_id: int) -> Optional[Artist]:
@@ -136,17 +132,13 @@ def get_artist(artist_id: int) -> Optional[Artist]:
 # --- Albums --------------------------------------------------------------
 
 
-def upsert_album(album: Album, conn: sqlite3.Connection | None = None) -> None:
+def upsert_album(album: Album) -> None:
     sql = """
         INSERT INTO albums (id, title, genre) VALUES (:id, :title, :genre)
         ON CONFLICT(id) DO UPDATE SET title = excluded.title, genre = excluded.genre
     """
-    params = {"id": album.id, "title": album.title, "genre": album.genre}
-    if conn is not None:
-        conn.execute(sql, params)
-    else:
-        with get_connection() as c:
-            c.execute(sql, params)
+    with get_connection() as conn:
+        conn.execute(sql, {"id": album.id, "title": album.title, "genre": album.genre})
 
 
 def get_album(album_id: int) -> Optional[Album]:

@@ -80,6 +80,11 @@ class DeezerTrack:
     bpm: Optional[float]
     isrc: Optional[str]
     genre: Optional[str] = None
+    # Transient only -- never persisted (db/repo.py has no such column,
+    # since preview URLs are signed and expire). Carries the preview URL
+    # a /track/{id} call already returned, so callers in the same request
+    # chain don't have to immediately re-fetch it a few seconds later.
+    preview_url: Optional[str] = None
 
 
 def _normalize_track(raw: dict, genre: Optional[str] = None) -> DeezerTrack:
@@ -96,6 +101,7 @@ def _normalize_track(raw: dict, genre: Optional[str] = None) -> DeezerTrack:
         bpm=float(bpm) if bpm else None,
         isrc=raw.get("isrc"),
         genre=genre,
+        preview_url=raw.get("preview") or None,
     )
 
 
@@ -118,14 +124,19 @@ def get_track_detail(track_id: int) -> DeezerTrack:
         except DeezerAPIError:
             genre = None
     track = _normalize_track(raw, genre=genre)
-    _persist_track(track)
+    _persist_track(track, album_title=album.get("title", ""))
     return track
 
 
-def _persist_track(track: DeezerTrack) -> None:
+def _persist_track(track: DeezerTrack, album_title: str = "") -> None:
     repo.upsert_artist(repo.Artist(id=track.artist_id, name=track.artist_name))
     if track.album_id:
-        repo.upsert_album(repo.Album(id=track.album_id, title="", genre=track.genre))
+        # get_album_genre() (called above) already upserted the real title
+        # when it looked up the album; only overwrite it here if we
+        # actually have one, so this call can never blank it out.
+        existing = repo.get_album(track.album_id)
+        title = album_title or (existing.title if existing else "")
+        repo.upsert_album(repo.Album(id=track.album_id, title=title, genre=track.genre))
     repo.upsert_track(
         repo.Track(
             id=track.id,
