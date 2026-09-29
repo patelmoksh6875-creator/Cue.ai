@@ -8,6 +8,7 @@ from __future__ import annotations
 import streamlit as st
 
 import config
+from agent import groq_agent
 from db import repo
 from matching import candidates
 from sources import deezer
@@ -107,6 +108,30 @@ def render_find_matches() -> None:
             "for this seed -- showing what fit rather than padding with poor matches."
         )
 
+    # Explain only the top 3 by score, in one batched call -- Groq's free
+    # tier has a per-minute token cap, and prose for all 20 isn't useful.
+    explain_key = f"explanations_{seed.id}"
+    if explain_key not in st.session_state:
+        top3 = sorted(results, key=lambda r: r.breakdown.total, reverse=True)[:3]
+        top3_payload = [
+            (
+                r.track.title,
+                {
+                    "bpm": r.breakdown.bpm,
+                    "key": r.breakdown.key,
+                    "tags": r.breakdown.tags,
+                    "genre": r.breakdown.genre,
+                    "energy": r.breakdown.energy,
+                },
+            )
+            for r in top3
+        ]
+        st.session_state[explain_key] = groq_agent.explain_top_results(seed.title, top3_payload)
+    explanations = st.session_state[explain_key]
+
+    if not config.GROQ_ENABLED:
+        st.caption("Groq disabled (no GROQ_API_KEY) -- showing templated explanations for the top 3.")
+
     sort_by = st.radio("Sort by", ["score", "bpm", "key"], horizontal=True)
     rows = results
     if sort_by == "bpm":
@@ -125,6 +150,8 @@ def render_find_matches() -> None:
             cols[5].write(r.breakdown.label)
             with cols[6]:
                 _preview_player(r.track.id)
+            if r.track.title in explanations:
+                st.caption(explanations[r.track.title])
 
 
 def render_pair_mode() -> None:
