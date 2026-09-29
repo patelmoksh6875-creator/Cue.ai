@@ -183,12 +183,35 @@ def _apply_diversity(ranked: list[RankedResult], max_per_artist: int) -> list[Ra
     return kept
 
 
+def score_pair(track_a: deezer.DeezerTrack, track_b: deezer.DeezerTrack) -> scoring.ScoreBreakdown:
+    """Second mode: user picks both songs, we score the pair directly."""
+    features_a = _analyze_candidate(track_a)
+    features_b = _analyze_candidate(track_b)
+    bpm_a = features_a.bpm if features_a else track_a.bpm
+    bpm_b = features_b.bpm if features_b else track_b.bpm
+    camelot_a = features_a.camelot if features_a else None
+    camelot_b = features_b.camelot if features_b else None
+    energy_a = features_a.energy if features_a else None
+    energy_b = features_b.energy if features_b else None
+
+    bpm = scoring.bpm_score(bpm_a, bpm_b)
+    key = scoring.key_score(camelot_a, camelot_b)
+    tags = scoring.tags_score(_get_tags(track_a), _get_tags(track_b))
+    genre = scoring.genre_score(track_a.genre, track_b.genre)
+    energy = scoring.energy_score(energy_a, energy_b)
+    return scoring.total_score(bpm=bpm, key=key, tags=tags, genre=genre, energy=energy)
+
+
 def run_match_pipeline(
-    seed: deezer.DeezerTrack, result_count: int = config.RESULT_COUNT
+    seed: deezer.DeezerTrack,
+    result_count: int = config.RESULT_COUNT,
+    progress_callback=None,
 ) -> list[RankedResult]:
     """Full pipeline: gather -> hard-filter -> lazily analyze -> score ->
     diversify -> rank -> log. Returns up to `result_count` results; fewer
-    if too few candidates survive filtering (never padded with bad matches)."""
+    if too few candidates survive filtering (never padded with bad matches).
+    `progress_callback(done, total)`, if given, is called after each
+    candidate is processed -- e.g. to drive a UI progress bar."""
     seed_features = _analyze_candidate(seed)
     seed_bpm = seed_features.bpm if seed_features else seed.bpm
     seed_camelot = seed_features.camelot if seed_features else None
@@ -199,16 +222,20 @@ def run_match_pipeline(
     pool = hard_filter_bpm(seed_bpm, pool)
 
     ranked: list[RankedResult] = []
-    for candidate in pool:
+    for i, candidate in enumerate(pool, 1):
         # Full detail persists the track (and resolves genre) before any
         # foreign-key-dependent write, and gives us the real album genre
         # for scoring instead of the coarser search-result stub.
         try:
             candidate = deezer.get_track_detail(candidate.id)
         except Exception:
+            if progress_callback:
+                progress_callback(i, len(pool))
             continue
         features = _analyze_candidate(candidate)
         if features is None:
+            if progress_callback:
+                progress_callback(i, len(pool))
             continue
         bpm = scoring.bpm_score(seed_bpm, features.bpm)
         key = scoring.key_score(seed_camelot, features.camelot)
@@ -217,6 +244,8 @@ def run_match_pipeline(
         energy = scoring.energy_score(seed_energy, features.energy)
         breakdown = scoring.total_score(bpm=bpm, key=key, tags=tags, genre=genre, energy=energy)
         ranked.append(RankedResult(track=candidate, breakdown=breakdown))
+        if progress_callback:
+            progress_callback(i, len(pool))
 
     ranked.sort(key=lambda r: r.breakdown.total, reverse=True)
     ranked = _apply_diversity(ranked, config.MAX_TRACKS_PER_ARTIST)
