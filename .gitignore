@@ -9,5 +9,6 @@ __pycache__/
 .DS_Store
 *.egg-info/
 logs/*.log
+logs/*.log.*
+logs/snippets/
 .cue.pid
-mixing/tmp/

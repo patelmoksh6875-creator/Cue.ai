@@ -144,6 +144,23 @@ nothing outside `sources/` or `agent/` calls an external API directly;
 scoring functions in `matching/scoring.py` are pure (no I/O, no database);
 API keys never reach the browser -- every external call happens server-side.
 
+## API contract
+
+| Method and path | Purpose |
+|---|---|
+| `GET /api/health` | Used by the launcher to know the server is up |
+| `GET /api/search?q=` | Deezer search for picking a seed song |
+| `POST /api/match` `{seed_id}` | Starts a match run, returns `{job_id}` |
+| `GET /api/match/{job_id}` | Poll: `status` (queued/running/done/error), `progress` text, `result` (seed + up to `RESULT_POOL` scored results) when done |
+| `GET /api/preview/{track_id}` | Streams a fresh Deezer preview server-side (never hands the browser a raw signed URL) |
+| `POST /api/mix-snippet` `{a_id, b_id, style, length_seconds}` | Cache hit: `{job_id: null, snippet_url}` immediately. Otherwise `{job_id, snippet_url: null}` -- poll it |
+| `GET /api/mix-snippet/{job_id}` | Poll: same shape as `/api/match/{job_id}`; `result` has `snippet_url`, `warnings`, and the honest limitations `note` |
+| `GET /api/snippet/{id}.mp3` | Serves a rendered snippet |
+| `POST /api/shutdown` | Cleanly stops the server (self-SIGTERM after responding) -- used by the Quit Cue button and `cue.py stop` |
+
+Long-running work (a cold match run, or a first-time snippet render) always
+uses the job + polling pattern above, never one long request.
+
 ## Re-analyzing after a code change
 
 Audio analysis results are cached in the `audio_features` table, keyed by
@@ -248,10 +265,29 @@ The one seed that didn't clear the bar ("Rolling in the Deep") is the
 wrong-recording case described above, not a matching failure — the
 `_analyze_candidate` cache reuse and the fix to stop double-fetching
 preview URLs per candidate (see git history) cut per-seed runtime from
-several minutes to well under a minute on a warm cache.
+several minutes to well under a minute on a warm cache. All of this ran
+against the original Streamlit UI; the matching engine itself (the part
+that produced these numbers) is unchanged by the V2 rewrite.
+
+V2 (`CLAUDE_HANDOFF_V2_WEB_UI.md`) replaced Streamlit with a FastAPI
+server + plain HTML/CSS/JS frontend, rewrote the launcher to run as a
+detached background process (`cue.py start/stop/status/logs`), added a
+client-side artist/genre filter bar over a larger scored result pool,
+and added the mix snippet maker (all three styles). Verified live on
+macOS with Python 3.11: the full browser flow end to end (search, match
+with progress, filtering, on-demand preview, all three mix-snippet
+styles playing back correctly), the launcher's start/stop/status/logs
+and stale-PID-file self-healing, log rotation, and the snippet-cache
+cleanup on shutdown. Not tested on Linux/Windows — the ffmpeg install
+hints and `cue.command`-equivalent for those platforms are unverified.
 
 Run the test suite with:
 
 ```bash
 pytest
 ```
+
+(117 tests as of this writing: scoring, repo round-trips, adapters
+against mocked responses, candidate discovery/fuzzy-matching, the Groq
+agent's deterministic fallback path, the launcher's pure/file-based
+logic, and the mix snippet maker's DSP functions.)

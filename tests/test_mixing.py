@@ -1,7 +1,29 @@
 import numpy as np
 import pytest
 
-from mixing import align, styles
+import config
+from mixing import align, render, styles
+
+
+# --- snippet cache keys ------------------------------------------------
+
+
+def test_snippet_cache_key_includes_analyzer_version():
+    key = render.snippet_cache_key(1, 2, "blend", 12)
+    assert key == f"1_2_blend_12_{config.ANALYZER_VERSION}"
+
+
+def test_snippet_cache_key_distinguishes_style_and_length():
+    a = render.snippet_cache_key(1, 2, "blend", 12)
+    b = render.snippet_cache_key(1, 2, "cut", 12)
+    c = render.snippet_cache_key(1, 2, "blend", 15)
+    assert len({a, b, c}) == 3
+
+
+def test_snippet_path_lives_under_snippet_dir():
+    path = render.snippet_path("abc123")
+    assert path.parent == render.SNIPPET_DIR
+    assert path.name == "abc123.mp3"
 
 
 # --- plan_tempo_match --------------------------------------------------

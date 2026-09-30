@@ -112,6 +112,20 @@ def suppress_streamlit_first_run_prompt() -> None:
         pass
 
 
+MAX_LOG_BYTES = 5 * 1024 * 1024
+
+
+def _rotate_log_if_large() -> None:
+    """Simple size-based rotation for the launched server's raw stdout
+    log -- it's a subprocess's output stream, not Python logging, so
+    logging.handlers.RotatingFileHandler doesn't apply here. Keeps one
+    backup, checked at each start rather than continuously."""
+    if LOG_FILE.exists() and LOG_FILE.stat().st_size > MAX_LOG_BYTES:
+        backup = LOG_FILE.with_suffix(".log.1")
+        backup.unlink(missing_ok=True)
+        LOG_FILE.rename(backup)
+
+
 def find_free_port(preferred: int) -> int:
     port = preferred
     while port < preferred + 100:
@@ -178,6 +192,7 @@ def start() -> None:
 
     port = find_free_port(DEFAULT_PORT)
     LOG_DIR.mkdir(exist_ok=True)
+    _rotate_log_if_large()
     log_handle = open(LOG_FILE, "a")
     log_handle.write(f"\n--- Cue starting at {time.strftime('%Y-%m-%d %H:%M:%S')} on port {port} ---\n")
     log_handle.flush()
