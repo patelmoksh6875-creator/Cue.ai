@@ -183,6 +183,7 @@ body.stopped { opacity: 0.5; pointer-events: none; }
   font-size: 0.9rem;
 }
 .results-note.error { background: #3b1f22; color: #f5b5bb; }
+.mix-warning { color: var(--good); margin-top: 0.3rem; font-size: 0.85rem; }
 
 .results { display: flex; flex-direction: column; gap: 0.6rem; }
 

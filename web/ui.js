@@ -76,6 +76,24 @@ export function renderResultsNote(container, shownCount, totalMatchingFilter, re
   container.hidden = true;
 }
 
+export function renderMixNote(container, note, warnings) {
+  container.hidden = false;
+  container.className = "results-note";
+  container.textContent = "";
+  if (note) container.appendChild(el("div", null, note));
+  if (warnings?.key_incompatible) {
+    container.appendChild(el("div", "mix-warning", "⚠ Keys are not close on the Camelot wheel -- expect clashing."));
+  }
+  if (warnings?.stretch_exceeds_quality) {
+    container.appendChild(
+      el("div", "mix-warning", `⚠ Tempo stretch was ${Math.round(warnings.stretch_pct * 100)}% -- quality may be degraded.`)
+    );
+  }
+  if (warnings?.low_confidence_bpm) {
+    container.appendChild(el("div", "mix-warning", "⚠ Low-confidence BPM on one track -- the snippet may sound off-grid even for a good pair."));
+  }
+}
+
 export function renderFilterChips(container, values, selectedSet, onToggle) {
   container.textContent = "";
   for (const value of values) {

@@ -101,12 +101,20 @@ els.player.addEventListener("ended", () => {
 async function previewMix(result, button) {
   const original = button.textContent;
   button.disabled = true;
-  button.textContent = "Rendering...";
   try {
-    const { snippetUrl } = await api.startMixSnippet(state.seedId, result.id, "blend", 12);
+    const { snippetUrl, warnings, note } = await api.getMixSnippet(
+      state.seedId,
+      result.id,
+      "blend",
+      12,
+      (progress) => {
+        button.textContent = progress || "Rendering...";
+      }
+    );
     els.player.src = snippetUrl;
     els.player.hidden = false;
     els.player.play();
+    ui.renderMixNote(els.resultsNote, note, warnings);
   } catch (err) {
     ui.renderError(els.resultsNote, `Mix snippet: ${err.message}`);
   } finally {

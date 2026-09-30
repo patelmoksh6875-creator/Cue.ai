@@ -49,7 +49,7 @@ class AnalysisResult:
     bpm_disagreement: Optional[str] = None  # e.g. "half", "double", None
 
 
-def _download_preview(preview_url: str) -> Path:
+def download_preview(preview_url: str) -> Path:
     resp = httpx.get(preview_url, timeout=15.0, follow_redirects=True)
     resp.raise_for_status()
     tmp = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False)
@@ -80,7 +80,7 @@ def _estimate_key(chroma_mean: np.ndarray) -> tuple[str, str]:
 def analyze_preview(preview_url: str, deezer_bpm: Optional[float] = None) -> AnalysisResult:
     """Download a preview, decode it, and run BPM/key/energy analysis.
     Cleans up the temp file when done, even on error."""
-    tmp_path = _download_preview(preview_url)
+    tmp_path = download_preview(preview_url)
     try:
         y, sr = librosa.load(str(tmp_path), sr=config.PREVIEW_SAMPLE_RATE, mono=True)
 

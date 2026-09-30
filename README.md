@@ -190,6 +190,36 @@ config produced them.
   track; a raw CLI/script call with `limit=1` does not have that safety
   net.
 
+## Mix snippets
+
+"Preview mix" generates a 10-15s sample of how the seed and a result
+might blend: tempo-matches (respecting half/double-time), picks a
+beat-aligned offset by maximizing low-frequency onset overlap, and mixes
+a transition in one of three styles (blend = EQ bass-swap crossfade, cut
+= hard cut with an echo tail, echo-out = beat-synced decaying echo).
+Rendered snippets are cached by `(a_id, b_id, style, length,
+analyzer_version)` so repeat clicks are instant, and the cache is
+cleared on server shutdown (personal use only -- no persistent library
+of derived preview audio is kept between runs).
+
+**This is a sample, not a finished mix, and the UI says so every time.**
+Known limitations, by design:
+- The only audio available is Deezer's 30s preview clips -- an arbitrary
+  slice of the song, not its real intro/outro. The snippet shows how the
+  two songs *sound* together (tempo, key, feel), not where the real
+  transition should happen in the full tracks.
+- Both previews can happen to contain vocals at the same moment, which
+  sounds messy -- detecting that needs stem separation or lyric timing,
+  out of scope for v1.
+- A large tempo stretch, a key clash, or a low-confidence BPM estimate
+  all degrade the result even for a genuinely good pair; the UI surfaces
+  each of these as a warning rather than silently producing a bad-sounding
+  snippet and leaving the user to blame the song choice.
+- Some tracks have no Deezer preview at all in some regions; the API
+  returns a clear error rather than a broken snippet.
+- Rendering takes a few seconds of CPU time -- it only happens on click,
+  per result, never upfront for all 20.
+
 ## Development status
 
 All 8 build stages from `CLAUDE_HANDOFF.md` are implemented and verified:

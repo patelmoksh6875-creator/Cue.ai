@@ -18,6 +18,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from db import repo
+from mixing import render as mix_render
 from server.routes import health, match, mix, preview, search
 
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
@@ -45,6 +46,13 @@ def shutdown() -> dict:
 
     threading.Timer(0.3, _stop).start()
     return {"status": "stopping"}
+
+
+@app.on_event("shutdown")
+def _cleanup_on_shutdown() -> None:
+    """Personal use only: don't leave a persistent library of derived
+    preview audio sitting around between runs."""
+    mix_render.cleanup_snippet_cache()
 
 
 # Mounted last so /api/* routes above take priority over static files.
