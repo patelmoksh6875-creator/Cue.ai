@@ -39,10 +39,45 @@ no separate migration step.
 
 ## Running it
 
+One command, from the project root:
+
 ```bash
-source .venv/bin/activate
-streamlit run app.py
+python cue.py
 ```
+
+(A terminal can't literally run `run cue.py` — the command is `python cue.py`.)
+
+This starts Streamlit with the same Python interpreter that ran `cue.py` (so
+there's no "wrong venv" confusion) and opens the browser at
+`http://localhost:8501`. If that port is already busy, it automatically picks
+the next free one and prints the actual URL. Press **Ctrl+C** to stop —
+it shuts Streamlit down cleanly.
+
+On macOS you can also double-click **`cue.command`** in Finder instead of
+using the terminal; it activates `.venv` and runs `python cue.py` for you.
+
+If something's missing, `cue.py` tells you exactly what and exits cleanly
+(no stack trace):
+- **Python too old** — install Python 3.11 and recreate `.venv` (see Setup).
+- **Dependencies missing** — activate the virtualenv and run
+  `pip install -r requirements.txt`.
+- **ffmpeg missing** — it prints an OS-specific install command
+  (`brew install ffmpeg` on macOS) and exits; fix it and re-run.
+- **No `.env` file** — it tells you to copy `.env.example` to `.env`, but
+  still launches, since deterministic matching works without any keys.
+
+To reset the cache (e.g. after changing scoring weights or wanting a clean
+slate), just delete the database file:
+
+```bash
+rm cue.sqlite3
+```
+
+It's recreated automatically on the next launch.
+
+`cue.py` is a thin launcher only — it contains no app logic. All UI code
+stays in `app.py`; if you'd rather run Streamlit directly for development,
+`streamlit run app.py` still works exactly as before.
 
 This opens the UI in your browser with two modes:
 - **Find matches**: search for a seed song, click "Find matches", and get a
@@ -66,6 +101,9 @@ for r in results:
 ## Project layout
 
 ```
+cue.py                   one-command launcher (checks env, starts Streamlit) -- no app logic
+cue.command              macOS double-click launcher, runs cue.py via .venv
+.streamlit/config.toml   telemetry off, localhost-only, port 8501
 config.py               weights, thresholds, API keys, versions -- change tuning here, nowhere else
 sources/deezer.py        ALL Deezer calls (search, detail, related, charts, preview URLs)
 sources/lastfm.py        ALL Last.fm calls (tags, similar tracks)

@@ -13,7 +13,7 @@ from db import repo
 from matching import candidates
 from sources import deezer
 
-st.set_page_config(page_title="Cue.ai", page_icon="🎧", layout="wide")
+st.set_page_config(page_title="Cue", page_icon="🎧", layout="wide")
 repo.init_db()
 
 
