@@ -1,23 +1,49 @@
-"""These tests run entirely offline. Since this session has no
-GROQ_API_KEY, config.GROQ_ENABLED is False and every call below exercises
-the real deterministic fallback path (not a mock standing in for it).
+"""These tests exercise the real deterministic fallback path (not a mock
+standing in for it) by forcing _get_client() to return None, regardless
+of whether this environment has a real GROQ_API_KEY configured -- a
+config-level patch (e.g. config.GROQ_ENABLED) wouldn't be enough on its
+own since _get_client() is the actual gate every call goes through.
 """
+import pytest
+
 from agent import groq_agent
 
 
-def test_expand_vibe_query_falls_back_without_key():
+@pytest.fixture(autouse=True)
+def _reset_groq_agent_module_caches():
+    """groq_agent.py memoizes the client and the live model list in
+    module-level globals (reasonable in production -- one process, one
+    lookup), but that leaks between tests: a test that forces
+    _get_client() to return None also, as a side effect of calling the
+    real _offered_models()/_refresh_available_models(), caches an empty
+    model list that then silently breaks later tests expecting the real
+    API (e.g. making them look like they hit the deterministic fallback
+    when they didn't really exercise the live path at all)."""
+    groq_agent._client = None
+    groq_agent._available_models = None
+    groq_agent._offered_model_ids = None
+    yield
+    groq_agent._client = None
+    groq_agent._available_models = None
+    groq_agent._offered_model_ids = None
+
+
+def test_expand_vibe_query_falls_back_without_key(monkeypatch):
+    monkeypatch.setattr(groq_agent, "_get_client", lambda: None)
     result = groq_agent.expand_vibe_query("summer beach house vibe")
     assert result.queries == ["summer beach house vibe"]
     assert "summer" in result.tags
     assert "beach" in result.tags
 
 
-def test_expand_vibe_query_filters_short_words():
+def test_expand_vibe_query_filters_short_words(monkeypatch):
+    monkeypatch.setattr(groq_agent, "_get_client", lambda: None)
     result = groq_agent.expand_vibe_query("a to be it")
     assert result.tags == []
 
 
-def test_explain_top_results_falls_back_without_key():
+def test_explain_top_results_falls_back_without_key(monkeypatch):
+    monkeypatch.setattr(groq_agent, "_get_client", lambda: None)
     top = [
         ("Wide Open", {"bpm": 0.98, "key": 1.0}),
         ("RATATA", {"bpm": 0.95, "key": 0.85}),
@@ -126,3 +152,25 @@ def test_expand_vibe_query_requests_cheap_model(monkeypatch):
     monkeypatch.setattr(groq_agent, "_cheap_model_if_available", lambda: ["cheap-model"])
     groq_agent.expand_vibe_query("summer vibe")
     assert captured["models"] == ["cheap-model"]
+
+
+@pytest.mark.skipif(not config_module().GROQ_ENABLED, reason="no GROQ_API_KEY configured")
+def test_live_expand_vibe_query_returns_real_llm_output():
+    """Regression test for a real bug: GROQ_MODEL_FALLBACK/CHEAP were
+    deprecated by Groq (removed from the model lineup entirely), and
+    separately max_tokens=200 was too small for gpt-oss-120b's output,
+    truncating the JSON mid-string and silently falling back to the
+    deterministic path. Only runs when a real key is configured."""
+    result = groq_agent.expand_vibe_query("summer beach house vibe")
+    # The deterministic fallback returns the input verbatim as the only
+    # query; a real LLM call expands it into several different ones.
+    assert len(result.queries) > 1
+    assert result.queries != ["summer beach house vibe"]
+
+
+@pytest.mark.skipif(not config_module().GROQ_ENABLED, reason="no GROQ_API_KEY configured")
+def test_live_explain_top_results_returns_real_llm_output():
+    top = [("Get Lucky", {"bpm": 0.9, "key": 0.85})]
+    explanations = groq_agent.explain_top_results("One More Time", top)
+    fallback = groq_agent._templated_explanation("One More Time", "Get Lucky", top[0][1])
+    assert explanations["Get Lucky"] != fallback

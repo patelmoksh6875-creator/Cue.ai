@@ -103,9 +103,14 @@ CONFIG_VERSION = 1
 # --- Groq models -----------------------------------------------------------
 # Ordered fallback chain: primary -> fallback -> cheap. Never hardcode a
 # model name anywhere outside this file.
+# llama-3.3-70b-versatile and llama-3.1-8b-instant (the originally chosen
+# fallback/cheap models) were removed from Groq's lineup entirely -- see
+# GROQ_MODELS_ORDERED's live-availability check in agent/groq_agent.py,
+# which is exactly what caught this. Replaced with the current smaller
+# gpt-oss tier; verified against `client.models.list()` on 2026-09-30.
 GROQ_MODEL_PRIMARY = "openai/gpt-oss-120b"
-GROQ_MODEL_FALLBACK = "llama-3.3-70b-versatile"
-GROQ_MODEL_CHEAP = "llama-3.1-8b-instant"
+GROQ_MODEL_FALLBACK = "openai/gpt-oss-20b"
+GROQ_MODEL_CHEAP = "openai/gpt-oss-20b"
 GROQ_MODELS_ORDERED = [GROQ_MODEL_PRIMARY, GROQ_MODEL_FALLBACK]
 
 # Groq is optional. When False (or no key set), the pipeline runs fully

@@ -131,7 +131,7 @@ def expand_vibe_query(vibe_text: str) -> QueryExpansion:
             {"role": "user", "content": vibe_text},
         ]
 
-    raw = _call_with_fallback(build_messages, max_tokens=200, models=_cheap_model_if_available())
+    raw = _call_with_fallback(build_messages, max_tokens=500, models=_cheap_model_if_available())
     if raw is None:
         return _deterministic_expand(vibe_text)
 
@@ -195,7 +195,7 @@ def explain_top_results(
             },
         ]
 
-    raw = _call_with_fallback(build_messages, max_tokens=400)
+    raw = _call_with_fallback(build_messages, max_tokens=700)
     if raw is None:
         return fallback
 
