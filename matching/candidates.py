@@ -133,6 +133,32 @@ def _get_tags(track: deezer.DeezerTrack) -> set[str]:
         return set()
 
 
+def normalize_genre_name(name: str) -> str:
+    """So the filter bar doesn't split "Hip Hop" and "Hip-Hop" into two
+    options: collapse whitespace/hyphens and title-case."""
+    collapsed = re.sub(r"[\s\-]+", " ", name.strip())
+    return collapsed.title()
+
+
+def resolve_display_genre(track: deezer.DeezerTrack) -> dict:
+    """Genre for display and for the genre filter bar. Deezer's
+    album-level genre first; if Deezer has none, the top Last.fm tag,
+    clearly labeled as a tag rather than a genre. Never blank."""
+    if track.genre:
+        return {"name": normalize_genre_name(track.genre), "source": "genre"}
+    tags = get_top_tags_safe(track)
+    if tags:
+        return {"name": normalize_genre_name(tags[0][0]), "source": "tag"}
+    return {"name": "Unknown", "source": "unknown"}
+
+
+def get_top_tags_safe(track: deezer.DeezerTrack) -> list[tuple[str, float]]:
+    try:
+        return get_top_tags(track.artist_name, track.title)
+    except (LastFMNotConfigured, LastFMError):
+        return []
+
+
 def _analyze_candidate(track: deezer.DeezerTrack) -> audio.AnalysisResult | None:
     """Lazy, cached librosa analysis: skip tracks already analyzed at the
     current analyzer version, skip tracks with no preview available."""

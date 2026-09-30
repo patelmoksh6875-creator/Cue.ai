@@ -44,6 +44,12 @@ LASTFM_PER_SECONDS = 1.0
 # --- Matching output -------------------------------------------------------
 RESULT_COUNT = 20
 
+# The server returns this many scored/diversified results (sorted by
+# score) so the UI's artist/genre filter bar can refill from the pool
+# client-side instead of leaving a handful of results after filtering.
+# The UI still only *shows* RESULT_COUNT at a time, pre-filter.
+RESULT_POOL = 60
+
 # Candidate pool must be much bigger than RESULT_COUNT since hard filters
 # remove most of it.
 CANDIDATE_POOL_TARGET_MIN = 100
@@ -56,9 +62,11 @@ BPM_TOLERANCE_PCT = 0.06
 BPM_HALF_DOUBLE_MATCHING = True
 
 # --- Scoring weights -------------------------------------------------------
-# Relative weights, not required to sum to 1.0: matching/scoring.py
-# renormalizes over whatever components are actually available for a given
-# track (e.g. no tags), so only the ratios between these matter.
+# Must sum to 1.0 (tests/test_scoring.py enforces this) so total_score is a
+# true 0..1 value, shown in the UI as a percent match. matching/scoring.py
+# separately renormalizes over whatever components are actually available
+# for a given track (e.g. no tags), so a missing component doesn't also
+# need the remaining weights to sum to 1 on their own.
 SCORE_WEIGHTS = {
     "bpm": 0.30,
     "key": 0.25,

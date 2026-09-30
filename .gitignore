@@ -8,3 +8,6 @@ __pycache__/
 .pytest_cache/
 .DS_Store
 *.egg-info/
+logs/*.log
+.cue.pid
+mixing/tmp/

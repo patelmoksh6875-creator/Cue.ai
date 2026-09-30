@@ -181,3 +181,44 @@ def test_total_score_weighted_partial_mix():
     weights = __import__("config").SCORE_WEIGHTS
     expected = (weights["bpm"] * 0.5 + weights["tags"] * 1.0) / (weights["bpm"] + weights["tags"])
     assert result.total == pytest.approx(expected, abs=1e-4)
+
+
+def test_score_weights_sum_to_one():
+    import config
+
+    assert sum(config.SCORE_WEIGHTS.values()) == pytest.approx(1.0, abs=1e-9)
+
+
+# --- percent_match ---------------------------------------------------------
+
+
+def test_percent_match_rounds_and_clamps():
+    assert scoring.percent_match(0.874) == 87
+    assert scoring.percent_match(1.0) == 100
+    assert scoring.percent_match(0.0) == 0
+    assert scoring.percent_match(1.2) == 100  # clamp above 1
+    assert scoring.percent_match(-0.1) == 0  # clamp below 0
+
+
+# --- bpm_relation ----------------------------------------------------------
+
+
+def test_bpm_relation_exact():
+    assert scoring.bpm_relation(128, 129) == "exact"
+
+
+def test_bpm_relation_half_time():
+    assert scoring.bpm_relation(140, 70) == "half-time"
+
+
+def test_bpm_relation_double_time():
+    assert scoring.bpm_relation(70, 140) == "double-time"
+
+
+def test_bpm_relation_none_when_missing():
+    assert scoring.bpm_relation(None, 128) is None
+    assert scoring.bpm_relation(128, None) is None
+
+
+def test_bpm_relation_none_when_unrelated():
+    assert scoring.bpm_relation(128, 200) is None

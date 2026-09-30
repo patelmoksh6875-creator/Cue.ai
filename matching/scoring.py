@@ -157,3 +157,27 @@ def _is_safe(bpm: Optional[float], key: Optional[float]) -> bool:
     if bpm is None or key is None:
         return False
     return bpm >= config.SAFE_BPM_SCORE_MIN and key >= config.SAFE_KEY_SCORE_MIN
+
+
+def percent_match(total_score_value: float) -> int:
+    """A 0..1 total_score as a whole-number percent for display, e.g.
+    "87% match". This is a relative score from the weighted factors, not
+    a probability the mix will sound good -- never label it "accuracy" or
+    "chance" in the UI."""
+    return round(max(0.0, min(1.0, total_score_value)) * 100)
+
+
+def bpm_relation(seed_bpm: Optional[float], candidate_bpm: Optional[float]) -> Optional[str]:
+    """Display-only: how a candidate's BPM relates to the seed's, so the
+    UI can show e.g. "70 BPM (half-time of 140)". Independent of
+    bpm_score()'s actual scoring math -- this never affects ranking."""
+    if not seed_bpm or not candidate_bpm or seed_bpm <= 0 or candidate_bpm <= 0:
+        return None
+    tolerance = config.BPM_TOLERANCE_PCT
+    if abs(candidate_bpm - seed_bpm) / seed_bpm <= tolerance:
+        return "exact"
+    if abs(candidate_bpm * 2 - seed_bpm) / seed_bpm <= tolerance:
+        return "half-time"
+    if abs(candidate_bpm / 2 - seed_bpm) / seed_bpm <= tolerance:
+        return "double-time"
+    return None
