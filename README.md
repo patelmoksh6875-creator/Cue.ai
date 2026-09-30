@@ -47,14 +47,29 @@ python cue.py
 
 (A terminal can't literally run `run cue.py` — the command is `python cue.py`.)
 
-This starts Streamlit with the same Python interpreter that ran `cue.py` (so
-there's no "wrong venv" confusion) and opens the browser at
-`http://localhost:8501`. If that port is already busy, it automatically picks
-the next free one and prints the actual URL. Press **Ctrl+C** to stop —
-it shuts Streamlit down cleanly.
+This starts the Cue server as a **detached background process** (using the
+same Python interpreter that ran `cue.py`, so there's no "wrong venv"
+confusion), waits for it to come up, opens your browser to it, prints one
+line, and **returns you to the terminal prompt** — the terminal is not
+needed afterward. If port 8765 is already busy, it automatically picks the
+next free one. Running `python cue.py` again while Cue is already running
+just opens another browser tab to it instead of starting a second server.
 
 On macOS you can also double-click **`cue.command`** in Finder instead of
-using the terminal; it activates `.venv` and runs `python cue.py` for you.
+using the terminal; it closes its own Terminal window once the server is up.
+The first time you run it, macOS will likely say it's from an "unidentified
+developer" — right-click `cue.command` and choose **Open** instead of
+double-clicking, to get the option to run it anyway.
+
+**Stopping it:**
+
+```bash
+python cue.py stop      # stops the server
+python cue.py status    # shows whether it's running, and where
+python cue.py logs      # prints the server log (logs/cue.log)
+```
+
+There's also a **Quit Cue** button in the web UI's top bar.
 
 If something's missing, `cue.py` tells you exactly what and exits cleanly
 (no stack trace):
@@ -75,14 +90,18 @@ rm cue.sqlite3
 
 It's recreated automatically on the next launch.
 
-`cue.py` is a thin launcher only — it contains no app logic. All UI code
-stays in `app.py`; if you'd rather run Streamlit directly for development,
-`streamlit run app.py` still works exactly as before.
+`cue.py` is a thin launcher only — it contains no app logic. All UI code is
+plain HTML/CSS/JS in `web/`, served by the FastAPI app in `server/`; if
+you'd rather run the server directly for development (foreground, with logs
+in your terminal instead of `logs/cue.log`), `uvicorn server.main:app
+--host 127.0.0.1 --port 8765 --reload` works too.
 
-This opens the UI in your browser with two modes:
+The web UI has two modes:
 - **Find matches**: search for a seed song, click "Find matches", and get a
-  sortable ranked list of up to 20 candidates with a full score breakdown.
-- **Score a pair**: pick two songs directly and see how well they'd mix.
+  filterable, sortable ranked list of up to 20 candidates (from a larger
+  scored pool) with BPM, key, genre, and percent match.
+- **Preview mix**: on any result, generate a short audio sample of how the
+  seed and that track might blend (see Mix snippets below).
 
 ### Command-line pipeline (no UI)
 
@@ -101,10 +120,9 @@ for r in results:
 ## Project layout
 
 ```
-cue.py                   one-command launcher (checks env, starts Streamlit) -- no app logic
-cue.command              macOS double-click launcher, runs cue.py via .venv
-.streamlit/config.toml   telemetry off, localhost-only, port 8501
-config.py               weights, thresholds, API keys, versions -- change tuning here, nowhere else
+cue.py                   launcher: start/stop/status/logs, detached server, opens browser
+cue.command              macOS double-click launcher, closes its own Terminal window
+config.py                weights, thresholds, API keys, versions -- change tuning here, nowhere else
 sources/deezer.py        ALL Deezer calls (search, detail, related, charts, preview URLs)
 sources/lastfm.py        ALL Last.fm calls (tags, similar tracks)
 analysis/audio.py        librosa: BPM verification, key/Camelot, energy
@@ -113,13 +131,18 @@ matching/candidates.py   candidate discovery, fuzzy resolve, dedupe, full pipeli
 db/schema.sql            schema
 db/repo.py               the ONLY file that touches SQL
 agent/groq_agent.py      Groq tool-calling: query expansion, top-3 explanations, deterministic fallback
-app.py                   Streamlit UI
+mixing/                  mix snippet maker: align.py, render.py, styles.py
+server/main.py           FastAPI app: route registration, static file mount, 127.0.0.1 only
+server/routes/           search.py, match.py, preview.py, mix.py -- thin, call existing modules
+server/jobs.py           in-memory job tracking for long-running match/snippet runs
+web/                     plain HTML/CSS/JS frontend -- no framework, no build step
 tests/                   pytest unit tests + verify_stageN.py manual verification scripts
 ```
 
 Rules this codebase follows: nothing outside `db/repo.py` writes SQL;
-nothing outside `sources/` calls an external API directly; scoring
-functions in `matching/scoring.py` are pure (no I/O, no database).
+nothing outside `sources/` or `agent/` calls an external API directly;
+scoring functions in `matching/scoring.py` are pure (no I/O, no database);
+API keys never reach the browser -- every external call happens server-side.
 
 ## Re-analyzing after a code change
 
@@ -162,16 +185,20 @@ config produced them.
   recording** (a cover, remix, or tribute) if Deezer's own search ranking
   puts one above the original — seen once in the 10-seed check below,
   where "Rolling in the Deep Adele" resolved to a drum & bass tribute
-  cover instead of the original. The Streamlit UI avoids this by showing
-  a `st.selectbox` of the actual search results so the user picks the
-  right track; a raw CLI/script call with `limit=1` does not have that
-  safety net.
+  cover instead of the original. The web UI avoids this by showing a
+  dropdown of the actual search results so the user picks the right
+  track; a raw CLI/script call with `limit=1` does not have that safety
+  net.
 
 ## Development status
 
 All 8 build stages from `CLAUDE_HANDOFF.md` are implemented and verified:
 scaffold/DB, Deezer adapter, librosa analysis, scoring engine, Last.fm +
-candidate discovery, Streamlit UI, Groq agent, and this hardening pass.
+candidate discovery, a web UI, Groq agent, and a hardening pass. The
+original Streamlit UI (`CLAUDE_HANDOFF.md` Stage 6) was later replaced
+entirely by a FastAPI server + plain HTML/CSS/JS frontend per
+`CLAUDE_HANDOFF_V2_WEB_UI.md` -- see that file and the V2 commits for
+what changed and why.
 The Last.fm and Groq integrations were verified only via their documented
 no-key fallback paths and mocked unit tests in this environment (no
 personal API keys were available) — add real keys to `.env` and re-run
