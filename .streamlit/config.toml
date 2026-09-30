@@ -1,7 +1,0 @@
-[browser]
-gatherUsageStats = false
-
-[server]
-headless = false
-port = 8501
-address = "localhost"
