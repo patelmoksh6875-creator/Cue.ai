@@ -212,7 +212,13 @@ def start() -> None:
         stdout=log_handle,
         stderr=subprocess.STDOUT,
         stdin=subprocess.DEVNULL,
-        start_new_session=True,  # detach: survives this script exiting
+        close_fds=True,
+        start_new_session=True,  # new session: detaches from the controlling
+        # terminal, so a closed terminal/ended launching session can't HUP it.
+        # Belt-and-suspenders: also explicitly ignore SIGHUP in the child --
+        # SIG_IGN survives exec (unlike a Python signal handler), so uvicorn
+        # inherits "ignore SIGHUP" even though it doesn't set that itself.
+        preexec_fn=lambda: signal.signal(signal.SIGHUP, signal.SIG_IGN),
     )
     PID_FILE.write_text(json.dumps({"pid": proc.pid, "port": port}))
 

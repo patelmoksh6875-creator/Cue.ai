@@ -12,6 +12,7 @@ from __future__ import annotations
 import os
 import signal
 import threading
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -23,9 +24,17 @@ from server.routes import health, match, mix, preview, search
 
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 
-app = FastAPI(title="Cue")
 
-repo.init_db()
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    repo.init_db()
+    yield
+    # Personal use only: don't leave a persistent library of derived
+    # preview audio sitting around between runs.
+    mix_render.cleanup_snippet_cache()
+
+
+app = FastAPI(title="Cue", lifespan=_lifespan)
 
 app.include_router(health.router, prefix="/api")
 app.include_router(search.router, prefix="/api")
@@ -46,13 +55,6 @@ def shutdown() -> dict:
 
     threading.Timer(0.3, _stop).start()
     return {"status": "stopping"}
-
-
-@app.on_event("shutdown")
-def _cleanup_on_shutdown() -> None:
-    """Personal use only: don't leave a persistent library of derived
-    preview audio sitting around between runs."""
-    mix_render.cleanup_snippet_cache()
 
 
 # Mounted last so /api/* routes above take priority over static files.

@@ -114,7 +114,27 @@ def test_deezer_raises_clear_error_after_retries_exhausted(monkeypatch):
 
     monkeypatch.setattr(deezer, "_client", _mock_transport(handler))
     monkeypatch.setattr(deezer.time, "sleep", lambda _: None)  # skip real backoff delay
-    with pytest.raises(deezer.DeezerAPIError, match="failed after"):
+    with pytest.raises(deezer.DeezerAPIError, match="Deezer returned an error"):
+        deezer.search_tracks("anything")
+
+
+def test_deezer_distinguishes_rate_limit_from_other_failures(monkeypatch):
+    def handler(request):
+        return httpx.Response(429)
+
+    monkeypatch.setattr(deezer, "_client", _mock_transport(handler))
+    monkeypatch.setattr(deezer.time, "sleep", lambda _: None)
+    with pytest.raises(deezer.DeezerAPIError, match="rate-limiting"):
+        deezer.search_tracks("anything")
+
+
+def test_deezer_distinguishes_network_unreachable(monkeypatch):
+    def handler(request):
+        raise httpx.ConnectError("simulated DNS failure", request=request)
+
+    monkeypatch.setattr(deezer, "_client", _mock_transport(handler))
+    monkeypatch.setattr(deezer.time, "sleep", lambda _: None)
+    with pytest.raises(deezer.DeezerAPIError, match="unreachable"):
         deezer.search_tracks("anything")
 
 

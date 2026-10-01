@@ -18,7 +18,7 @@ def preview(track_id: int) -> StreamingResponse:
     try:
         url = deezer.get_fresh_preview_url(track_id)
     except deezer.DeezerAPIError as exc:
-        raise HTTPException(status_code=502, detail=f"Deezer error: {exc}") from exc
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
     if not url:
         raise HTTPException(status_code=404, detail="No preview available for this track")
 

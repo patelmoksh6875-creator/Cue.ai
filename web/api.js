@@ -19,6 +19,18 @@ export function search(query) {
   return getJSON(`/api/search?q=${encodeURIComponent(query)}`);
 }
 
+// Used to detect the server going away (e.g. closed while the page is
+// still open) so the UI can show a friendly offline message instead of
+// leaving stale content or a browser-native connection-failed page.
+export async function isHealthy() {
+  try {
+    const resp = await fetch("/api/health");
+    return resp.ok;
+  } catch (_) {
+    return false;
+  }
+}
+
 export async function startMatch(seedId) {
   const { job_id } = await getJSON("/api/match", {
     method: "POST",

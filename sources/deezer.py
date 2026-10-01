@@ -41,28 +41,61 @@ def _throttle() -> None:
 
 def _get(path: str, params: Optional[dict] = None, retries: int = 3) -> dict:
     last_error: Optional[Exception] = None
+    last_failure_kind = "unreachable"  # "rate_limited" | "unreachable" | "deezer_error"
     for attempt in range(retries):
         _throttle()
         try:
             resp = _client.get(path, params=params)
             if resp.status_code == 429:
+                last_failure_kind = "rate_limited"
                 logger.warning("Deezer rate limited on %s (attempt %d/%d)", path, attempt + 1, retries)
                 time.sleep(2**attempt)
                 continue
             resp.raise_for_status()
             data = resp.json()
             if isinstance(data, dict) and "error" in data:
+                # A 200 response can still carry an error body (e.g. quota
+                # exceeded) -- log the upstream status/body so this is
+                # distinguishable from a network failure, not just assumed
+                # to be a success because the status code was 200.
+                logger.warning(
+                    "Deezer returned an error body on %s (HTTP %d): %s",
+                    path, resp.status_code, str(data["error"])[:300],
+                )
+                last_failure_kind = "deezer_error"
                 raise DeezerAPIError(str(data["error"]))
             return data
-        except (httpx.HTTPError, DeezerAPIError) as exc:
+        except DeezerAPIError as exc:
             last_error = exc
+            last_failure_kind = "deezer_error"
+            time.sleep(2**attempt)
+        except httpx.HTTPStatusError as exc:
+            last_error = exc
+            last_failure_kind = "deezer_error"
+            logger.warning(
+                "Deezer request to %s failed (attempt %d/%d): HTTP %d",
+                path, attempt + 1, retries, exc.response.status_code,
+            )
+            time.sleep(2**attempt)
+        except httpx.HTTPError as exc:
+            last_error = exc
+            last_failure_kind = "unreachable"
             logger.warning("Deezer request to %s failed (attempt %d/%d): %s", path, attempt + 1, retries, exc)
             time.sleep(2**attempt)
-    logger.error("Deezer request to %s failed after %d retries -- is Deezer down?", path, retries)
-    raise DeezerAPIError(
-        f"Deezer request to {path} failed after {retries} retries -- Deezer may be down or "
-        "rate-limiting this IP. Check https://developers.deezer.com for status."
-    ) from last_error
+
+    logger.error("Deezer request to %s failed after %d retries (%s)", path, retries, last_failure_kind)
+    messages = {
+        "rate_limited": (
+            f"Deezer is rate-limiting this connection after {retries} retries on {path}. "
+            "Wait a minute and try again."
+        ),
+        "unreachable": (
+            f"Deezer is unreachable after {retries} retries on {path} -- check your internet "
+            "connection. If it's up, see https://developers.deezer.com for status."
+        ),
+        "deezer_error": f"Deezer returned an error for {path}: {last_error}",
+    }
+    raise DeezerAPIError(messages[last_failure_kind]) from last_error
 
 
 class DeezerAPIError(Exception):

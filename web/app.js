@@ -20,6 +20,7 @@ const els = {
   resultsNote: document.getElementById("results-note"),
   results: document.getElementById("results"),
   player: document.getElementById("player"),
+  offlineOverlay: document.getElementById("offline-overlay"),
 };
 
 const state = {
@@ -221,3 +222,25 @@ document.addEventListener("keydown", (e) => {
 });
 
 ui.setStatus(els.status, "Ready");
+
+// Detect the server going away while the page is open (closed terminal,
+// crash, `cue.py stop`) and show a clear message instead of a blank or
+// stuck-looking page. A couple of consecutive misses avoids flapping on
+// one slow/dropped request.
+const HEALTH_POLL_MS = 8000;
+let consecutiveHealthFailures = 0;
+
+async function pollServerHealth() {
+  const healthy = await api.isHealthy();
+  if (healthy) {
+    consecutiveHealthFailures = 0;
+    els.offlineOverlay.hidden = true;
+  } else {
+    consecutiveHealthFailures += 1;
+    if (consecutiveHealthFailures >= 2) {
+      els.offlineOverlay.hidden = false;
+    }
+  }
+}
+
+setInterval(pollServerHealth, HEALTH_POLL_MS);

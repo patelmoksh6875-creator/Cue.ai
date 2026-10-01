@@ -185,6 +185,26 @@ body.stopped { opacity: 0.5; pointer-events: none; }
 .results-note.error { background: #3b1f22; color: #f5b5bb; }
 .mix-warning { color: var(--good); margin-top: 0.3rem; font-size: 0.85rem; }
 
+.offline-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 10, 12, 0.92);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+.offline-box {
+  text-align: center;
+  padding: 2rem 2.5rem;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+}
+.offline-title { font-size: 1.3rem; font-weight: 700; margin-bottom: 0.5rem; }
+.offline-body { color: var(--text-dim); }
+.offline-body code { background: #2a2a33; padding: 0.1rem 0.4rem; border-radius: 4px; }
+
 .results { display: flex; flex-direction: column; gap: 0.6rem; }
 
 .result-card {

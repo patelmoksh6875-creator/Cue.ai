@@ -56,7 +56,7 @@ def start_match(req: MatchRequest) -> dict:
     try:
         seed = deezer.get_track_detail(req.seed_id)
     except deezer.DeezerAPIError as exc:
-        raise HTTPException(status_code=502, detail=f"Deezer error: {exc}") from exc
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     def work(job) -> dict:
         job.progress = "Gathering candidates..."
