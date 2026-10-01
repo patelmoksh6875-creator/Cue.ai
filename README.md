@@ -192,6 +192,43 @@ Likewise, if you change the scoring weights or thresholds in `config.py`,
 bump `CONFIG_VERSION` so `match_runs` rows can be told apart by which
 config produced them.
 
+## Troubleshooting: what each error message means
+
+**From `cue.py` itself (no terminal needed if launched via `Cue.app` --
+these show as a native dialog instead):**
+- *"Dependencies missing (...)"* — activate `.venv` and
+  `pip install -r requirements.txt`.
+- *"ffmpeg not found on PATH"* — install it (the message gives the exact
+  command for your OS).
+- *"No .env file found"* — copy `.env.example` to `.env`; this is a
+  notice, not a failure, Cue still starts without it.
+- *"Cue's server process exited unexpectedly"* / *"Cue didn't respond
+  within 20s"* — check `logs/cue.log` (or `python cue.py logs`) for the
+  real underlying error; something in `server/main.py` or its imports
+  failed to start.
+
+**From the web UI (shown inline, next to whatever failed):**
+- *"Cue isn't running"* (full-page overlay) — the server went away while
+  the page was open. Run `python cue.py` again or re-open `Cue.app`; the
+  overlay clears itself automatically once it's back, no refresh needed.
+- *"Deezer is rate-limiting this connection..."* — wait a minute, Deezer's
+  own per-IP limit was hit; not something Cue can speed past.
+- *"Deezer is unreachable after N retries..."* — check your internet
+  connection; if it's fine, Deezer itself may be down.
+- *"Deezer returned an error for ..."* — Deezer's API responded but with
+  an error body (e.g. a malformed/retired track ID); the message
+  includes Deezer's own error text.
+- *"No preview available for this track"* — that specific track has no
+  30s preview in Deezer's catalog for your region; pick another.
+- *"Unknown style '...'"* — only `blend`, `cut`, and `echo-out` are valid
+  mix-snippet styles (shouldn't happen from the UI, only from a raw API call).
+
+All of the above (plus every Deezer/Last.fm request's upstream status
+code and a truncated response body on failure) are logged to
+`logs/cue.log` — `python cue.py logs` prints the last 50 lines, or open
+the file directly for the full history. It rotates automatically past 5MB
+(one backup kept, `cue.log.1`).
+
 ## Known limitations (by design, not oversights)
 
 - **Deezer BPM is often missing or wrong by 2x** (half/double-time). Every
