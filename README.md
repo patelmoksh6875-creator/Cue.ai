@@ -256,6 +256,28 @@ Known limitations, by design:
 - Rendering takes a few seconds of CPU time -- it only happens on click,
   per result, never upfront for all 20.
 
+**Blend is the primary/default style** (`style: "blend"` is the default on
+`/api/mix-snippet`), per the project's current direction. No stem
+separation, vocal isolation, or Demucs code exists anywhere in this
+codebase -- that was explicitly rejected as a dependency and never built.
+
+Tested on 10 real pairs (`/tmp/test_10_pairs.py`, not committed -- a
+one-off verification script): 10/10 rendered successfully with no crash,
+each confirmed as exactly 12.0s via `ffprobe`, each confirmed non-silent
+with healthy levels (-12 to -20 dB mean volume) via `ffmpeg`'s
+`volumedetect`. 2/10 pairs came back with no warnings at all; the other
+8/10 triggered a key-clash and/or tempo-stretch and/or low-BPM-confidence
+warning -- expected and correct, since most of those 10 pairs were
+deliberately varied/mismatched (different genres and keys), not curated
+harmonic pairs, and the warning system's job is exactly to flag that.
+**Honest limitation: this verifies technical success (duration, audio
+levels, no crash) and the objective warning flags, not perceptual beat
+alignment by ear** -- judging whether a snippet actually *sounds*
+well-aligned requires a human listening to it, which an automated check
+run by this agent cannot do. Listen to a few yourself via "Preview mix"
+and judge; the warnings next to each snippet tell you which ones were
+already flagged as likely rough.
+
 ## Development status
 
 All 8 build stages from `CLAUDE_HANDOFF.md` are implemented and verified:
