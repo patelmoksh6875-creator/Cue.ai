@@ -82,3 +82,31 @@ def test_status_reports_not_running(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(cue, "PID_FILE", tmp_path / "nope.pid")
     cue.status()
     assert "not running" in capsys.readouterr().out
+
+
+def test_install_app_generates_valid_bundle(tmp_path, monkeypatch):
+    monkeypatch.setattr(cue, "PROJECT_DIR", tmp_path)
+    monkeypatch.setattr("builtins.input", lambda *a: "n")
+    cue.install_app()
+
+    app_dir = tmp_path / "Cue.app"
+    plist = app_dir / "Contents" / "Info.plist"
+    executable = app_dir / "Contents" / "MacOS" / "Cue"
+
+    assert plist.exists()
+    assert "<string>Cue</string>" in plist.read_text()
+    assert executable.exists()
+    assert executable.stat().st_mode & 0o111  # executable bits set
+    script = executable.read_text()
+    assert str(tmp_path) in script  # absolute path baked in
+    assert "show_error" in script
+    bash_check = __import__("subprocess").run(
+        ["bash", "-n", str(executable)], capture_output=True
+    )
+    assert bash_check.returncode == 0, bash_check.stderr.decode()
+
+
+def test_install_app_skips_on_non_darwin(monkeypatch):
+    monkeypatch.setattr(cue.sys, "platform", "linux")
+    with pytest.raises(SystemExit):
+        cue.install_app()
