@@ -13,8 +13,9 @@ const els = {
   findMatchesBtn: document.getElementById("find-matches-btn"),
   matchProgress: document.getElementById("match-progress"),
   filterBar: document.getElementById("filter-bar"),
-  artistFilters: document.getElementById("artist-filters"),
-  genreFilters: document.getElementById("genre-filters"),
+  filterInput: document.getElementById("filter-input"),
+  filterSuggestions: document.getElementById("filter-suggestions"),
+  filterChips: document.getElementById("filter-chips"),
   sortSelect: document.getElementById("sort-select"),
   clearFiltersBtn: document.getElementById("clear-filters-btn"),
   resultsNote: document.getElementById("results-note"),
@@ -26,17 +27,25 @@ const els = {
 const state = {
   seed: null,
   seedId: null,
-  pool: [], // full RESULT_POOL from the server
-  selectedArtists: new Set(),
-  selectedGenres: new Set(),
+  pool: [], // full RESULT_POOL from the server, grown by "search wider" refine calls
+  chips: [], // [{type: "artist"|"genre", value}]
   sortBy: "match_pct",
   activePlayButton: null,
+  suggestions: [],
+  activeSuggestionIndex: -1,
 };
+
+function currentFilterSets() {
+  return {
+    artists: new Set(state.chips.filter((c) => c.type === "artist").map((c) => c.value)),
+    genres: new Set(state.chips.filter((c) => c.type === "genre").map((c) => c.value)),
+  };
+}
 
 function rerenderResults() {
   const { shown, totalMatchingFilter } = filters.visibleResults(
     state.pool,
-    { artists: state.selectedArtists, genres: state.selectedGenres },
+    currentFilterSets(),
     state.sortBy,
     RESULT_COUNT
   );
@@ -49,31 +58,73 @@ function rerenderResults() {
 
 function rerenderFilterBar() {
   els.filterBar.hidden = state.pool.length === 0;
-  ui.renderFilterChips(
-    els.artistFilters,
-    filters.availableArtists(state.pool),
-    state.selectedArtists,
-    (value) => {
-      toggleSetMember(state.selectedArtists, value);
-      rerenderFilterBar();
-      rerenderResults();
-    }
-  );
-  ui.renderFilterChips(
-    els.genreFilters,
-    filters.availableGenres(state.pool),
-    state.selectedGenres,
-    (value) => {
-      toggleSetMember(state.selectedGenres, value);
-      rerenderFilterBar();
-      rerenderResults();
-    }
-  );
+  ui.renderChips(els.filterChips, state.chips, (chip) => {
+    state.chips = state.chips.filter((c) => !(c.type === chip.type && c.value === chip.value));
+    rerenderFilterBar();
+    rerenderResults();
+  });
+  els.clearFiltersBtn.hidden = state.chips.length === 0;
 }
 
-function toggleSetMember(set, value) {
-  if (set.has(value)) set.delete(value);
-  else set.add(value);
+function addChip(type, value) {
+  if (state.chips.some((c) => c.type === type && c.value === value)) return;
+  state.chips.push({ type, value });
+  els.filterInput.value = "";
+  closeSuggestions();
+  rerenderFilterBar();
+  rerenderResults();
+}
+
+function closeSuggestions() {
+  state.suggestions = [];
+  state.activeSuggestionIndex = -1;
+  ui.renderSuggestions(els.filterSuggestions, [], -1, () => {});
+}
+
+function updateSuggestions() {
+  const text = els.filterInput.value;
+  const base = filters.buildSuggestions(state.pool, text, currentFilterSets());
+  const suggestions = text.trim() && base.length === 0
+    ? [{ type: "wider", value: text.trim(), wider: true }]
+    : base;
+  state.suggestions = suggestions;
+  state.activeSuggestionIndex = suggestions.length > 0 ? 0 : -1;
+  ui.renderSuggestions(els.filterSuggestions, suggestions, state.activeSuggestionIndex, onPickSuggestion);
+}
+
+async function onPickSuggestion(suggestion) {
+  if (suggestion.wider) {
+    await searchWider(suggestion.value);
+    return;
+  }
+  addChip(suggestion.type, suggestion.value);
+}
+
+async function searchWider(term) {
+  els.filterInput.disabled = true;
+  closeSuggestions();
+  try {
+    const { results } = await api.refineMatch(state.seedId, term, (progress) => {
+      ui.renderProgress(els.matchProgress, progress);
+    });
+    const existingIds = new Set(state.pool.map((r) => r.id));
+    const added = results.filter((r) => !existingIds.has(r.id));
+    state.pool = [...state.pool, ...added];
+    els.filterInput.value = "";
+    if (added.length === 0) {
+      els.resultsNote.className = "results-note";
+      els.resultsNote.textContent = `No matches found for "${term}" against this seed.`;
+      els.resultsNote.hidden = false;
+    } else {
+      rerenderFilterBar();
+      rerenderResults();
+    }
+  } catch (err) {
+    ui.renderError(els.resultsNote, `Search Deezer for "${term}": ${err.message}`);
+  } finally {
+    ui.renderProgress(els.matchProgress, "");
+    els.filterInput.disabled = false;
+  }
 }
 
 function playPreview(trackId, button) {
@@ -160,6 +211,7 @@ function pickSeed(result) {
   els.findMatchesBtn.hidden = false;
   els.seedCard.hidden = true;
   state.pool = [];
+  state.chips = [];
   rerenderFilterBar();
   els.results.textContent = "";
   els.resultsNote.hidden = true;
@@ -179,8 +231,7 @@ els.findMatchesBtn.addEventListener("click", async () => {
     );
     state.seed = result.seed;
     state.pool = result.results;
-    state.selectedArtists.clear();
-    state.selectedGenres.clear();
+    state.chips = [];
     ui.renderSeedCard(els.seedCard, state.seed);
     rerenderFilterBar();
     rerenderResults();
@@ -198,10 +249,56 @@ els.sortSelect.addEventListener("change", () => {
 });
 
 els.clearFiltersBtn.addEventListener("click", () => {
-  state.selectedArtists.clear();
-  state.selectedGenres.clear();
+  state.chips = [];
   rerenderFilterBar();
   rerenderResults();
+});
+
+els.filterInput.addEventListener("input", updateSuggestions);
+
+els.filterInput.addEventListener("focus", () => {
+  if (els.filterInput.value.trim()) updateSuggestions();
+});
+
+els.filterInput.addEventListener("blur", () => {
+  // Delay so a suggestion's mousedown (which preventDefault()s the blur
+  // already) still has time to fire its click before we clear the list.
+  setTimeout(closeSuggestions, 100);
+});
+
+els.filterInput.addEventListener("keydown", (e) => {
+  if (e.key === "ArrowDown") {
+    e.preventDefault();
+    if (state.suggestions.length === 0) return;
+    state.activeSuggestionIndex = (state.activeSuggestionIndex + 1) % state.suggestions.length;
+    ui.renderSuggestions(els.filterSuggestions, state.suggestions, state.activeSuggestionIndex, onPickSuggestion);
+  } else if (e.key === "ArrowUp") {
+    e.preventDefault();
+    if (state.suggestions.length === 0) return;
+    state.activeSuggestionIndex =
+      (state.activeSuggestionIndex - 1 + state.suggestions.length) % state.suggestions.length;
+    ui.renderSuggestions(els.filterSuggestions, state.suggestions, state.activeSuggestionIndex, onPickSuggestion);
+  } else if (e.key === "Enter") {
+    e.preventDefault();
+    if (state.activeSuggestionIndex >= 0 && state.suggestions[state.activeSuggestionIndex]) {
+      onPickSuggestion(state.suggestions[state.activeSuggestionIndex]);
+    }
+  } else if (e.key === "Escape") {
+    closeSuggestions();
+  } else if (e.key === "Backspace" && els.filterInput.value === "" && state.chips.length > 0) {
+    state.chips.pop();
+    rerenderFilterBar();
+    rerenderResults();
+  }
+});
+
+// `/` focuses the filter box from anywhere on the page (unless the user
+// is already typing in a text field).
+document.addEventListener("keydown", (e) => {
+  if (e.key === "/" && document.activeElement?.tagName !== "INPUT") {
+    e.preventDefault();
+    els.filterInput.focus();
+  }
 });
 
 els.quitBtn.addEventListener("click", async () => {

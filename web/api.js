@@ -44,6 +44,19 @@ export function pollMatch(jobId) {
   return getJSON(`/api/match/${jobId}`);
 }
 
+// "Search Deezer for <term>": pulls extra candidates for an artist/genre
+// not in the current pool, scores them against the seed, and returns
+// {term, results} once the job completes -- the caller merges `results`
+// into its existing pool.
+export async function refineMatch(seedId, term, onProgress) {
+  const { job_id } = await getJSON("/api/match/refine", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ seed_id: seedId, term }),
+  });
+  return pollUntilDone(job_id, pollMatch, onProgress);
+}
+
 export function previewUrl(trackId) {
   return `/api/preview/${trackId}`;
 }

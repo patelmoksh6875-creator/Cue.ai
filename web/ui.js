@@ -94,14 +94,53 @@ export function renderMixNote(container, note, warnings) {
   }
 }
 
-export function renderFilterChips(container, values, selectedSet, onToggle) {
+// Dropdown suggestions while typing in the filter box. `suggestions` is
+// [{type: "artist"|"genre", value}], plus an optional synthetic
+// "Search Deezer for <term>" row appended by the caller when nothing in
+// the pool matches. `activeIndex` highlights one row for arrow-key nav.
+export function renderSuggestions(container, suggestions, activeIndex, onPick) {
   container.textContent = "";
-  for (const value of values) {
-    const chip = el("button", "chip", value);
-    chip.type = "button";
-    if (selectedSet.has(value)) chip.classList.add("chip-selected");
-    chip.addEventListener("click", () => onToggle(value));
-    container.appendChild(chip);
+  if (suggestions.length === 0) {
+    container.hidden = true;
+    container.closest(".filter-search-row")?.querySelector("input")
+      ?.setAttribute("aria-expanded", "false");
+    return;
+  }
+  container.hidden = false;
+  container.closest(".filter-search-row")?.querySelector("input")
+    ?.setAttribute("aria-expanded", "true");
+
+  suggestions.forEach((s, i) => {
+    const li = el("li", "filter-suggestion");
+    li.id = `filter-suggestion-${i}`;
+    li.setAttribute("role", "option");
+    if (i === activeIndex) li.classList.add("active");
+    if (s.wider) {
+      li.classList.add("filter-suggestion-wider");
+      li.appendChild(el("span", null, `Search Deezer for "${s.value}" that match this seed`));
+    } else {
+      li.appendChild(el("span", "filter-suggestion-tag", s.type === "artist" ? "Artist" : "Genre"));
+      li.appendChild(el("span", null, s.value));
+    }
+    li.addEventListener("mousedown", (e) => {
+      e.preventDefault(); // keep focus in the input, don't blur before the click registers
+      onPick(s);
+    });
+    container.appendChild(li);
+  });
+}
+
+export function renderChips(container, chips, onRemove) {
+  container.textContent = "";
+  for (const chip of chips) {
+    const pill = el("span", "filter-chip");
+    pill.appendChild(el("span", null, `${chip.type === "artist" ? "Artist" : "Genre"}: ${chip.value}`));
+    const removeBtn = el("button", null, "✕");
+    removeBtn.type = "button";
+    removeBtn.setAttribute("aria-label", `Remove filter ${chip.value}`);
+    removeBtn.addEventListener("click", () => onRemove(chip));
+    pill.appendChild(removeBtn);
+    container.appendChild(pill);
   }
 }
 

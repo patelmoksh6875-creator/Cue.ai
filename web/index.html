@@ -28,23 +28,30 @@
     </section>
 
     <section id="filter-bar" class="filter-bar" hidden>
-      <div class="filter-group">
-        <span class="field-label">Artist</span>
-        <div id="artist-filters" class="chip-list"></div>
+      <div class="filter-search-row">
+        <input
+          id="filter-input"
+          type="text"
+          placeholder="Filter by artist or genre... (press / to focus)"
+          autocomplete="off"
+          role="combobox"
+          aria-expanded="false"
+          aria-controls="filter-suggestions"
+          aria-autocomplete="list">
+        <ul id="filter-suggestions" class="filter-suggestions" hidden role="listbox"></ul>
       </div>
-      <div class="filter-group">
-        <span class="field-label">Genre</span>
-        <div id="genre-filters" class="chip-list"></div>
+      <div id="filter-chips" class="chip-list" aria-label="Active filters"></div>
+      <div class="filter-row-bottom">
+        <div class="sort-group">
+          <span class="field-label">Sort by</span>
+          <select id="sort-select">
+            <option value="match_pct">Match %</option>
+            <option value="bpm">BPM</option>
+            <option value="key">Key</option>
+          </select>
+        </div>
+        <button id="clear-filters-btn" class="btn btn-ghost" hidden>Clear all</button>
       </div>
-      <div class="filter-group sort-group">
-        <span class="field-label">Sort by</span>
-        <select id="sort-select">
-          <option value="match_pct">Match %</option>
-          <option value="bpm">BPM</option>
-          <option value="key">Key</option>
-        </select>
-      </div>
-      <button id="clear-filters-btn" class="btn btn-ghost">Clear filters</button>
     </section>
 
     <div id="results-note" class="results-note" hidden></div>

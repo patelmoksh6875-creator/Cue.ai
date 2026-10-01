@@ -235,25 +235,34 @@ def score_pair(track_a: deezer.DeezerTrack, track_b: deezer.DeezerTrack) -> scor
     return scoring.total_score(bpm=bpm, key=key, tags=tags, genre=genre, energy=energy)
 
 
-def run_match_pipeline(
+@dataclass
+class SeedContext:
+    bpm: Optional[float]
+    camelot: Optional[str]
+    energy: Optional[float]
+    tags: set[str]
+
+
+def _build_seed_context(seed: deezer.DeezerTrack) -> SeedContext:
+    features = _analyze_candidate(seed)
+    return SeedContext(
+        bpm=features.bpm if features else seed.bpm,
+        camelot=features.camelot if features else None,
+        energy=features.energy if features else None,
+        tags=_get_tags(seed),
+    )
+
+
+def _analyze_and_score_pool(
     seed: deezer.DeezerTrack,
-    result_count: int = config.RESULT_COUNT,
+    seed_ctx: SeedContext,
+    pool: list[deezer.DeezerTrack],
     progress_callback=None,
 ) -> list[RankedResult]:
-    """Full pipeline: gather -> hard-filter -> lazily analyze -> score ->
-    diversify -> rank -> log. Returns up to `result_count` results; fewer
-    if too few candidates survive filtering (never padded with bad matches).
-    `progress_callback(done, total)`, if given, is called after each
-    candidate is processed -- e.g. to drive a UI progress bar."""
-    seed_features = _analyze_candidate(seed)
-    seed_bpm = seed_features.bpm if seed_features else seed.bpm
-    seed_camelot = seed_features.camelot if seed_features else None
-    seed_energy = seed_features.energy if seed_features else None
-    seed_tags = _get_tags(seed)
-
-    pool = gather_candidate_pool(seed)
-    pool = hard_filter_bpm(seed_bpm, pool)
-
+    """Shared by run_match_pipeline() and refine_candidates(): full detail
+    + lazy analysis + scoring for a raw candidate pool. Does NOT rank,
+    diversify, or log -- callers compose that themselves since a refine
+    call merges into an existing ranked set instead of replacing it."""
     ranked: list[RankedResult] = []
     for i, candidate in enumerate(pool, 1):
         # Full detail persists the track (and resolves genre) before any
@@ -270,20 +279,24 @@ def run_match_pipeline(
             if progress_callback:
                 progress_callback(i, len(pool))
             continue
-        bpm = scoring.bpm_score(seed_bpm, features.bpm)
-        key = scoring.key_score(seed_camelot, features.camelot)
-        tags = scoring.tags_score(seed_tags, _get_tags(candidate))
+        bpm = scoring.bpm_score(seed_ctx.bpm, features.bpm)
+        key = scoring.key_score(seed_ctx.camelot, features.camelot)
+        tags = scoring.tags_score(seed_ctx.tags, _get_tags(candidate))
         genre = scoring.genre_score(seed.genre, candidate.genre)
-        energy = scoring.energy_score(seed_energy, features.energy)
+        energy = scoring.energy_score(seed_ctx.energy, features.energy)
         breakdown = scoring.total_score(bpm=bpm, key=key, tags=tags, genre=genre, energy=energy)
         ranked.append(RankedResult(track=candidate, breakdown=breakdown))
         if progress_callback:
             progress_callback(i, len(pool))
+    return ranked
 
-    ranked.sort(key=lambda r: r.breakdown.total, reverse=True)
+
+def _rank_diversify_log(
+    seed: deezer.DeezerTrack, ranked: list[RankedResult], result_count: int
+) -> list[RankedResult]:
+    ranked = sorted(ranked, key=lambda r: r.breakdown.total, reverse=True)
     ranked = _apply_diversity(ranked, config.MAX_TRACKS_PER_ARTIST)
     top = ranked[:result_count]
-
     for r in top:
         repo.log_match_run(
             repo.MatchRun(
@@ -299,3 +312,42 @@ def run_match_pipeline(
             )
         )
     return top
+
+
+def run_match_pipeline(
+    seed: deezer.DeezerTrack,
+    result_count: int = config.RESULT_COUNT,
+    progress_callback=None,
+) -> list[RankedResult]:
+    """Full pipeline: gather -> hard-filter -> lazily analyze -> score ->
+    diversify -> rank -> log. Returns up to `result_count` results; fewer
+    if too few candidates survive filtering (never padded with bad matches).
+    `progress_callback(done, total)`, if given, is called after each
+    candidate is processed -- e.g. to drive a UI progress bar."""
+    seed_ctx = _build_seed_context(seed)
+    pool = gather_candidate_pool(seed)
+    pool = hard_filter_bpm(seed_ctx.bpm, pool)
+    ranked = _analyze_and_score_pool(seed, seed_ctx, pool, progress_callback)
+    return _rank_diversify_log(seed, ranked, result_count)
+
+
+def refine_candidates(
+    seed: deezer.DeezerTrack,
+    query: str,
+    result_count: int = config.RESULT_POOL,
+    progress_callback=None,
+) -> list[RankedResult]:
+    """"Search wider": the user typed an artist/genre term that wasn't in
+    the current pool. Pulls extra candidates from a direct Deezer search
+    on that term, runs them through the same hard-filter/analyze/score
+    pipeline as the main match, and returns a ranked list to merge into
+    the existing pool client-side. Honest about Deezer's own rate limit
+    (same throttle as every other call in sources/deezer.py) and about
+    turning up nothing: an empty return means genuinely no fit, not a bug."""
+    seed_ctx = _build_seed_context(seed)
+    raw = deezer.search_tracks(query, limit=30)
+    raw = [t for t in raw if t.id != seed.id]
+    pool = _dedupe(raw)
+    pool = hard_filter_bpm(seed_ctx.bpm, pool)
+    ranked = _analyze_and_score_pool(seed, seed_ctx, pool, progress_callback)
+    return _rank_diversify_log(seed, ranked, result_count)

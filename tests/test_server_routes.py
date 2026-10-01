@@ -100,3 +100,43 @@ def test_mix_snippet_unknown_style_returns_error(client, monkeypatch):
         time.sleep(0.1)
     assert poll["status"] == "error"
     assert "Unknown style" in poll["error"]
+
+
+def test_refine_match_rejects_empty_term(client):
+    resp = client.post("/api/match/refine", json={"seed_id": 1, "term": "   "})
+    assert resp.status_code == 400
+
+
+def test_refine_match_returns_specific_error_on_deezer_failure(client, monkeypatch):
+    def fake_get_track_detail(track_id):
+        raise deezer.DeezerAPIError("simulated failure")
+
+    monkeypatch.setattr(deezer, "get_track_detail", fake_get_track_detail)
+    resp = client.post("/api/match/refine", json={"seed_id": 999, "term": "house"})
+    assert resp.status_code == 502
+
+
+def test_refine_match_happy_path(client, monkeypatch):
+    import time
+
+    seed = deezer.DeezerTrack(
+        id=1, title="Seed", artist_id=10, artist_name="Seed Artist",
+        album_id=20, duration=200, bpm=128.0, isrc="AAA",
+    )
+    monkeypatch.setattr(deezer, "get_track_detail", lambda track_id: seed)
+    monkeypatch.setattr(
+        "matching.candidates.refine_candidates",
+        lambda seed, term, result_count=60, progress_callback=None: [],
+    )
+    resp = client.post("/api/match/refine", json={"seed_id": 1, "term": "house"})
+    assert resp.status_code == 200
+    job_id = resp.json()["job_id"]
+
+    for _ in range(20):
+        poll = client.get(f"/api/match/{job_id}").json()
+        if poll["status"] in ("done", "error"):
+            break
+        time.sleep(0.1)
+    assert poll["status"] == "done"
+    assert poll["result"]["term"] == "house"
+    assert poll["result"]["results"] == []

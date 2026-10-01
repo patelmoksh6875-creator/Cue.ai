@@ -177,3 +177,57 @@ def test_analyze_candidate_falls_back_to_fresh_fetch_when_no_preview_url(monkeyp
     assert track.preview_url is None
     result = candidates._analyze_candidate(track)
     assert result is None
+
+
+# --- refine_candidates ("Search Deezer for <term>") -------------------------
+
+
+def test_refine_candidates_searches_and_scores(monkeypatch):
+    from analysis.audio import AnalysisResult
+
+    seed = _track(1, "Seed Song", artist_id=1, bpm=128)
+    found = [_track(2, "House Anthem", artist_id=2, bpm=128)]
+
+    monkeypatch.setattr(candidates.deezer, "search_tracks", lambda query, limit=30: found)
+    monkeypatch.setattr(candidates.deezer, "get_track_detail", lambda track_id: next(
+        t for t in [seed, *found] if t.id == track_id
+    ))
+    monkeypatch.setattr(candidates.repo, "get_audio_features", lambda track_id: None)
+    monkeypatch.setattr(
+        candidates.audio,
+        "analyze_preview",
+        lambda preview_url, deezer_bpm=None: AnalysisResult(
+            bpm=128.0, bpm_confidence=0.9, key="C major", camelot="8B", energy=0.5
+        ),
+    )
+    monkeypatch.setattr(candidates.deezer, "get_fresh_preview_url", lambda track_id: "https://example.com/p.mp3")
+    monkeypatch.setattr(candidates.repo, "upsert_audio_features", lambda features: None)
+    monkeypatch.setattr(candidates.repo, "log_match_run", lambda run: 1)
+    monkeypatch.setattr(candidates, "_get_tags", lambda track: set())
+
+    results = candidates.refine_candidates(seed, "house")
+    assert len(results) == 1
+    assert results[0].track.id == 2
+
+
+def test_refine_candidates_excludes_seed_from_results(monkeypatch):
+    seed = _track(1, "Seed Song", artist_id=1, bpm=128)
+    # Deezer search echoing the seed itself back (plausible for a query
+    # derived from its own artist/genre) must not re-include it.
+    monkeypatch.setattr(candidates.deezer, "search_tracks", lambda query, limit=30: [seed])
+    monkeypatch.setattr(candidates.repo, "get_audio_features", lambda track_id: None)
+    monkeypatch.setattr(candidates.deezer, "get_fresh_preview_url", lambda track_id: None)
+
+    results = candidates.refine_candidates(seed, "whatever")
+    assert results == []
+
+
+def test_refine_candidates_empty_when_nothing_fits(monkeypatch):
+    seed = _track(1, "Seed Song", artist_id=1, bpm=128)
+    far_off = _track(2, "Totally Different Tempo", artist_id=2, bpm=220)
+    monkeypatch.setattr(candidates.deezer, "search_tracks", lambda query, limit=30: [far_off])
+    monkeypatch.setattr(candidates.repo, "get_audio_features", lambda track_id: None)
+    monkeypatch.setattr(candidates.deezer, "get_fresh_preview_url", lambda track_id: None)
+
+    results = candidates.refine_candidates(seed, "something")
+    assert results == []

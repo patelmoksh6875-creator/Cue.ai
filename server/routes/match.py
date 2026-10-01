@@ -22,6 +22,11 @@ class MatchRequest(BaseModel):
     seed_id: int
 
 
+class RefineRequest(BaseModel):
+    seed_id: int
+    term: str
+
+
 def _serialize_result(seed_bpm: Optional[float], r: candidates.RankedResult) -> dict:
     features = repo.get_audio_features(r.track.id)
     genre = candidates.resolve_display_genre(r.track)
@@ -98,3 +103,37 @@ def poll_match(job_id: str) -> dict:
         "result": job.result if job.status == "done" else None,
         "error": job.error,
     }
+
+
+@router.post("/match/refine")
+def refine_match(req: RefineRequest) -> dict:
+    """'Search Deezer for <term>' -- the user typed an artist/genre not in
+    the current pool. Pulls extra candidates for that term and scores
+    them against the same seed; the frontend merges the result into its
+    existing pool. Returns an empty list (not an error) if genuinely
+    nothing fits."""
+    if not req.term.strip():
+        raise HTTPException(status_code=400, detail="term must not be empty")
+    try:
+        seed = deezer.get_track_detail(req.seed_id)
+    except deezer.DeezerAPIError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    def work(job) -> dict:
+        job.progress = f"Searching Deezer for '{req.term}'..."
+
+        def on_progress(done: int, total: int) -> None:
+            job.progress = f"Analyzing '{req.term}' candidates ({done}/{total})..."
+
+        results = candidates.refine_candidates(
+            seed, req.term, result_count=config.RESULT_POOL, progress_callback=on_progress
+        )
+        seed_features = repo.get_audio_features(seed.id)
+        seed_bpm = seed_features.bpm_verified if seed_features else seed.bpm
+        return {
+            "term": req.term,
+            "results": [_serialize_result(seed_bpm, r) for r in results],
+        }
+
+    job_id = create_job(work)
+    return {"job_id": job_id}

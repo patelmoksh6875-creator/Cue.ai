@@ -39,3 +39,43 @@ export function visibleResults(pool, filters, sortBy, resultCount) {
   const sorted = applySort(filtered, sortBy);
   return { shown: sorted.slice(0, resultCount), totalMatchingFilter: filtered.length };
 }
+
+// Case-insensitive, accent-insensitive normalization for forgiving
+// (prefix and substring) suggestion matching.
+export function normalizeForMatch(text) {
+  return text
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
+const MAX_SUGGESTIONS = 8;
+
+// Builds the autocomplete dropdown: matching artists and genres from the
+// scored pool (instant, no network), excluding anything already picked
+// as a chip. Each suggestion is {type: "artist"|"genre", value}.
+export function buildSuggestions(pool, queryText, selected = { artists: new Set(), genres: new Set() }) {
+  const needle = normalizeForMatch(queryText);
+  if (!needle) return [];
+
+  const artists = availableArtists(pool).filter(
+    (a) => !selected.artists?.has(a) && normalizeForMatch(a).includes(needle)
+  );
+  const genres = availableGenres(pool).filter(
+    (g) => !selected.genres?.has(g) && normalizeForMatch(g).includes(needle)
+  );
+
+  // Prefix matches first, then substring matches, within each type.
+  const byPrefixFirst = (values) => {
+    const starts = values.filter((v) => normalizeForMatch(v).startsWith(needle));
+    const rest = values.filter((v) => !normalizeForMatch(v).startsWith(needle));
+    return [...starts, ...rest];
+  };
+
+  const suggestions = [
+    ...byPrefixFirst(artists).map((value) => ({ type: "artist", value })),
+    ...byPrefixFirst(genres).map((value) => ({ type: "genre", value })),
+  ];
+  return suggestions.slice(0, MAX_SUGGESTIONS);
+}

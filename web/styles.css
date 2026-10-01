@@ -152,18 +152,66 @@ body.stopped { opacity: 0.5; pointer-events: none; }
 
 .filter-bar {
   display: flex;
-  gap: 1.25rem;
-  flex-wrap: wrap;
-  align-items: flex-end;
+  flex-direction: column;
+  gap: 0.6rem;
   padding: 0.8rem 1rem;
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 10px;
 }
-.filter-group { min-width: 160px; }
+
+.filter-search-row { position: relative; }
+.filter-search-row input {
+  width: 100%;
+  padding: 0.55rem 0.8rem;
+  background: #16161a;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 0.95rem;
+}
+
+.filter-suggestions {
+  position: absolute;
+  top: calc(100% + 0.3rem);
+  left: 0;
+  right: 0;
+  z-index: 20;
+  list-style: none;
+  margin: 0;
+  padding: 0.3rem 0;
+  background: #1f1f26;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  max-height: 280px;
+  overflow-y: auto;
+}
+.filter-suggestion {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.8rem;
+  cursor: pointer;
+}
+.filter-suggestion:hover, .filter-suggestion.active { background: #2a2a33; }
+.filter-suggestion-tag {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.05rem 0.35rem;
+  flex-shrink: 0;
+}
+.filter-suggestion-wider { color: var(--accent); font-style: italic; }
+
+.filter-row-bottom { display: flex; align-items: center; gap: 1rem; justify-content: space-between; }
+.sort-group { display: flex; align-items: center; gap: 0.5rem; }
 .sort-group select { width: auto; min-width: 140px; }
 
 .chip-list { display: flex; gap: 0.35rem; flex-wrap: wrap; }
+.chip-list:empty { display: none; }
 .chip {
   padding: 0.25rem 0.65rem;
   border-radius: 999px;
@@ -174,6 +222,29 @@ body.stopped { opacity: 0.5; pointer-events: none; }
   cursor: pointer;
 }
 .chip-selected { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.25rem 0.5rem 0.25rem 0.7rem;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-size: 0.8rem;
+}
+.filter-chip button {
+  background: rgba(255, 255, 255, 0.25);
+  border: none;
+  color: inherit;
+  border-radius: 50%;
+  width: 1.1rem;
+  height: 1.1rem;
+  cursor: pointer;
+  line-height: 1;
+  font-size: 0.75rem;
+}
+.filter-chip button:hover { background: rgba(255, 255, 255, 0.4); }
 
 .results-note {
   padding: 0.6rem 0.8rem;
