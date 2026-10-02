@@ -132,8 +132,16 @@ export function renderMixPanel(container, result, selected, handlers) {
   }
   container.appendChild(wrow);
 
+  if (result.timeline_text) {
+    container.appendChild(el("div", "mix-timeline", `Timeline: ${result.timeline_text}`));
+  }
+  if (result.loudness) {
+    const [ga, gb] = result.loudness.gain_db;
+    container.appendChild(el("div", "mix-sub",
+      `Levels matched before mixing (song A ${ga >= 0 ? "+" : ""}${ga} dB, song B ${gb >= 0 ? "+" : ""}${gb} dB). Rendered at ${result.render.sample_rate / 1000} kHz.`));
+  }
   container.appendChild(el("div", "mix-sub",
-    `Transition: ${result.blend_beats} beats. Kick alignment: ${Math.round(result.alignment.kick_corr * 100)}%` +
+    `Overlap: ${result.blend_beats} beats. Kick alignment: ${Math.round(result.alignment.kick_corr * 100)}%` +
     (result.alignment.well_aligned ? "" : " (weak)")));
 
   for (const m of result.warnings.messages) container.appendChild(el("div", "mix-warning", `Note: ${m}`));

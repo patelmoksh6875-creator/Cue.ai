@@ -38,6 +38,8 @@ def make_beat_view(
     if add_low_end:
         low, _high = split_bands(y, sr, cutoff_hz=low_end_hz)
         out = percussive + low * 0.9
+    if config.BEATVIEW_BROADBAND_MIX > 0:
+        out = out + y * config.BEATVIEW_BROADBAND_MIX  # fuller, but lets vocals through
 
     peak = float(np.max(np.abs(out))) if len(out) else 0.0
     if peak > 0:

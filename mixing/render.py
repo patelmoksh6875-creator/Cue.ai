@@ -40,7 +40,7 @@ from analysis import audio
 from db import repo
 from matching import instrumentals
 from matching.scoring import camelot_distance
-from mixing import align, beatview, windows
+from mixing import align, assemble, beatview, windows
 from mixing.styles import STYLES
 from sources import deezer
 
@@ -95,7 +95,8 @@ def snippet_cache_key(
     a_id: int, b_id: int, style: str, length_seconds: int,
     source: str = "auto", window_rank: int = 0,
 ) -> str:
-    return f"{a_id}_{b_id}_{style}_{length_seconds}_{source}_w{window_rank}_{config.ANALYZER_VERSION}"
+    return (f"{a_id}_{b_id}_{style}_{length_seconds}_{source}_w{window_rank}"
+            f"_{config.ANALYZER_VERSION}_r{config.MIX_RENDER_VERSION}")
 
 
 def snippet_path(cache_key: str) -> Path:
@@ -116,14 +117,16 @@ def load_cached_info(cache_key: str) -> Optional[dict]:
     return None
 
 
-def _load_audio(preview_url: str) -> tuple[np.ndarray, int]:
-    """Download and decode via ffmpeg to mono wav (handles mp3 AND iTunes m4a)."""
+def _load_audio(preview_url: str, sr: Optional[int] = None) -> tuple[np.ndarray, int]:
+    """Download and decode via ffmpeg to mono wav at the common render rate
+    (handles mp3 AND iTunes m4a). Analysis uses a 22.05 kHz copy of this."""
+    sr = sr or config.RENDER_SAMPLE_RATE
     src = audio.download_preview(preview_url)
     wav = Path(tempfile.NamedTemporaryFile(suffix=".wav", delete=False).name)
     try:
         subprocess.run(
             ["ffmpeg", "-y", "-loglevel", "error", "-i", str(src), "-ac", "1",
-             "-ar", str(config.PREVIEW_SAMPLE_RATE), str(wav)],
+             "-ar", str(sr), str(wav)],
             check=True,
         )
         y, sr = sf.read(str(wav), dtype="float32")
@@ -215,21 +218,11 @@ def _export_mp3(y: np.ndarray, sr: int, out_path: Path) -> None:
         if shutil.which("ffmpeg") is None:
             raise MixError("ffmpeg not found on PATH -- needed to export the snippet as MP3")
         subprocess.run(
-            ["ffmpeg", "-y", "-loglevel", "error", "-i", str(wav_path), str(out_path)],
+            ["ffmpeg", "-y", "-loglevel", "error", "-i", str(wav_path), "-b:a", "192k", str(out_path)],
             check=True,
         )
     finally:
         wav_path.unlink(missing_ok=True)
-
-
-def blend_beats_for(bpm: float, length_seconds: int) -> int:
-    """Whole number of beats for the transition: 16 (or 8) when it fits in
-    ~60% of the snippet, else the largest of 8/4 that does."""
-    beat_s = 60.0 / bpm
-    for beats in (config.MIX_BLEND_BEATS_LONG, config.MIX_BLEND_BEATS_SHORT, 4):
-        if beats * beat_s <= length_seconds * 0.6:
-            return beats
-    return 4
 
 
 def _half_tempo_drift(beats: np.ndarray) -> float:
@@ -270,8 +263,11 @@ def _song_report(track, src: SourceAudio, full_feat, chosen_feat, grid_overlap: 
 
 def build_snippet(
     a_id: int, b_id: int, style: str = "blend", length_seconds: int = DEFAULT_LENGTH_S,
-    source: str = "auto", window_rank: int = 0,
+    source: str = "auto", window_rank: int = 0, trace=None,
 ) -> MixResult:
+    """`trace(stage, who, samples, sr, extra)` (optional) is called after each
+    pipeline stage for debugging -- see mixing/debug.py. It never changes output."""
+    tr = trace or (lambda *a, **k: None)
     if style not in STYLES:
         raise MixError(f"Unknown style '{style}'. Choose one of: {', '.join(STYLES)}")
     if source not in SOURCES:
@@ -287,15 +283,26 @@ def build_snippet(
     if not url_a or not url_b:
         raise MixError("No preview available for one or both tracks in this region")
 
-    y_full_a, sr = _load_audio(url_a)
+    y_full_a, sr = _load_audio(url_a)          # render rate (44.1 kHz), mono
     y_full_b, _ = _load_audio(url_b)
+    tr("1 raw decoded", "A", y_full_a, sr, {"url": url_a})
+    tr("1 raw decoded", "B", y_full_b, sr, {"url": url_b})
     src_a = resolve_source(track_a, y_full_a, sr, source)
     src_b = resolve_source(track_b, y_full_b, sr, source)
+    tr("2 chosen source", "A", src_a.y, sr, {"audio_source": src_a.label, "instrumental": src_a.instrumental.__dict__ if src_a.instrumental else None})
+    tr("2 chosen source", "B", src_b.y, sr, {"audio_source": src_b.label, "instrumental": src_b.instrumental.__dict__ if src_b.instrumental else None})
 
-    full_a = _analysis_for(a_id, "full_mix", y_full_a, sr, track_a.bpm)
-    full_b = _analysis_for(b_id, "full_mix", y_full_b, sr, track_b.bpm)
-    ch_a = full_a if src_a.label == "full_mix" else _analysis_for(a_id, src_a.label, src_a.y, sr, None)
-    ch_b = full_b if src_b.label == "full_mix" else _analysis_for(b_id, src_b.label, src_b.y, sr, None)
+    # 22.05 kHz copies are for ANALYSIS only (tempo, key, beats, windows).
+    an = lambda y: librosa.resample(y, orig_sr=sr, target_sr=config.PREVIEW_SAMPLE_RATE)  # noqa: E731
+    asr = config.PREVIEW_SAMPLE_RATE
+    full_an_a, full_an_b = an(y_full_a), an(y_full_b)
+    chosen_an_a = full_an_a if src_a.label == "full_mix" else an(src_a.y)
+    chosen_an_b = full_an_b if src_b.label == "full_mix" else an(src_b.y)
+
+    full_a = _analysis_for(a_id, "full_mix", full_an_a, asr, track_a.bpm)
+    full_b = _analysis_for(b_id, "full_mix", full_an_b, asr, track_b.bpm)
+    ch_a = full_a if src_a.label == "full_mix" else _analysis_for(a_id, src_a.label, chosen_an_a, asr, None)
+    ch_b = full_b if src_b.label == "full_mix" else _analysis_for(b_id, src_b.label, chosen_an_b, asr, None)
     if not ch_a.bpm_verified or not ch_b.bpm_verified:
         raise MixError("Could not determine BPM for one or both tracks")
 
@@ -303,22 +310,22 @@ def build_snippet(
     # matching scores elsewhere keep using the full-mix analysis.
     plan = align.plan_tempo_match(ch_a.bpm_verified, ch_b.bpm_verified)
     y_a = src_a.y
-    y_b = align.time_stretch(src_b.y, plan.stretch_ratio)
+    y_b = align.time_stretch(src_b.y, plan.stretch_ratio, sr)
+    tr("3 after tempo stretch", "A", y_a, sr, {})
+    tr("3 after tempo stretch", "B", y_b, sr, {"stretch_ratio": plan.stretch_ratio})
+    an_a = chosen_an_a
+    an_b = align.time_stretch(chosen_an_b, plan.stretch_ratio, asr)
     bpm = ch_a.bpm_verified
-    beats_a = np.asarray(librosa.beat.beat_track(y=y_a, sr=sr, units="time", start_bpm=bpm)[1])
-    beats_b = np.asarray(librosa.beat.beat_track(y=y_b, sr=sr, units="time", start_bpm=bpm)[1])
-    full_beats_a = np.asarray(librosa.beat.beat_track(y=y_full_a, sr=sr, units="time")[1])
+    beats_a = np.asarray(librosa.beat.beat_track(y=an_a, sr=asr, units="time", start_bpm=bpm)[1])
+    beats_b = np.asarray(librosa.beat.beat_track(y=an_b, sr=asr, units="time", start_bpm=bpm)[1])
+    full_beats_a = np.asarray(librosa.beat.beat_track(y=full_an_a, sr=asr, units="time")[1])
     # Grid-change report compares UNSTRETCHED beats of chosen vs full-mix audio.
-    full_beats_b = np.asarray(librosa.beat.beat_track(y=y_full_b, sr=sr, units="time")[1])
-    raw_beats_b = np.asarray(librosa.beat.beat_track(y=src_b.y, sr=sr, units="time", start_bpm=ch_b.bpm_verified)[1])
+    full_beats_b = np.asarray(librosa.beat.beat_track(y=full_an_b, sr=asr, units="time")[1])
+    raw_beats_b = np.asarray(librosa.beat.beat_track(y=chosen_an_b, sr=asr, units="time", start_bpm=ch_b.bpm_verified)[1])
 
-    n_beats = blend_beats_for(bpm, length_seconds)
-    blend_s = n_beats * 60.0 / bpm
-    lead_s = max(1.0, (length_seconds - blend_s) * 0.45)
-    tail_s = max(1.0, length_seconds - blend_s - lead_s)
-
+    tl = assemble.plan_timeline(bpm, length_seconds)
     cands = windows.rank_windows(
-        y_a, y_b, sr, beats_a, beats_b, blend_s, lead_s, tail_s, bpm,
+        an_a, an_b, asr, beats_a, beats_b, tl.overlap_s, tl.lead_s, tl.tail_s, bpm,
         top=config.MIX_WINDOW_CANDIDATES,
     )
     if not cands:
@@ -326,16 +333,10 @@ def build_snippet(
     rank = min(window_rank, len(cands) - 1)
     chosen = cands[rank]
 
-    a_region = _take_segment(y_a, sr, chosen.a_blend_start - lead_s, lead_s + blend_s)
-    b_region = _take_segment(y_b, sr, chosen.b_blend_start, blend_s + tail_s)
-    a_lead, a_blend = a_region[: int(lead_s * sr)], a_region[int(lead_s * sr):]
-    b_blend, b_tail = b_region[: int(blend_s * sr)], b_region[int(blend_s * sr):]
-
-    transition = STYLES[style](a_blend, b_blend, sr)
-    full = np.concatenate([a_lead, transition, b_tail]).astype(np.float32)
-    peak = float(np.max(np.abs(full))) or 1.0
-    if peak > 0.98:
-        full = full / peak * 0.98
+    full, mix_report = assemble.assemble_mix(
+        y_a, y_b, sr, tl, chosen.a_blend_start, chosen.b_blend_start, style, trace=trace,
+    )
+    n_beats, blend_s = tl.n_beats, tl.overlap_s
 
     # ---- warnings, in plain language -------------------------------------
     w = MixWarnings(stretch_pct=round(plan.stretch_pct, 3), stretch_exceeds_quality=plan.exceeds_quality_threshold)
@@ -356,10 +357,14 @@ def build_snippet(
         w.messages.append("The two clips may have different feels (half-time vs double-time, or very different drum density).")
     if chosen.drum_corr < 0.25:
         w.messages.append("The kick patterns don't line up well in the best window found.")
-    for s in (src_a, src_b):
-        if s.label == "beat_view":
-            w.messages.append("Beat view is thin (drums and low end only) and may leak some vocal consonants.")
-            break
+    labels = {"A": src_a.label, "B": src_b.label}
+    for who, track in (("A", track_a), ("B", track_b)):
+        if labels[who] == "beat_view":
+            other = "an instrumental" if "instrumental" in labels.values() else "the full mix"
+            w.messages.append(
+                f"Song {who} (\"{track.title}\") is using beat view: drums and low end only, so it sounds thinner "
+                f"than {other}. It may also leak some vocal consonants."
+            )
 
     _export_mp3(full, sr, snippet_path(cache_key))
     info = {
@@ -373,6 +378,11 @@ def build_snippet(
         ],
         "window_rank": rank,
         "blend_beats": n_beats,
+        "overlap_s": round(blend_s, 2),
+        "timeline": mix_report["timeline"],
+        "timeline_text": mix_report["timeline_text"],
+        "loudness": mix_report["loudness"],
+        "render": {"sample_rate": sr, "channels": 1, "stretch_ratio": round(plan.stretch_ratio, 3)},
         "alignment": {"kick_corr": round(chosen.drum_corr, 2), "well_aligned": chosen.drum_corr >= 0.25},
         "warnings": {**{k: v for k, v in w.__dict__.items() if k != "messages"}, "messages": w.messages},
         "note": LIMITATION_NOTE,

@@ -276,6 +276,14 @@ Warnings are shown in plain language: tempo change inside a clip (possible beat 
 
 *Beat view low end:* `BEATVIEW_ADD_LOW_END` in `config.py` (default on). With it off you get drums only (kick/hat/clap, ~6-14% of energy below 120 Hz); with it on the kick and bass are present (~17-42%), which trap-style beats need. I could not listen, so please compare by ear and set the default you prefer.
 
+### How the mix is rendered (overlap, loudness, sample rate)
+
+- **Timeline:** song A alone (>= 2 s, a whole number of beats) -> **both songs together** for 16, 8 or 4 beats (largest that leaves >= 2 s for each solo) -> song B alone. The panel prints it, e.g. `0:00-0:02 song A · 0:02-0:10 both songs · 0:10-0:12 song B`. Tunable in `config.py` (`MIX_*`).
+- **Inside the overlap:** equal-power crossfade for mids/highs; a Linkwitz-Riley crossover at 150 Hz and a bass swap between 40% and 60% of the overlap, so the two basslines are never both above -6 dB.
+- **Loudness:** both clips are matched to the same RMS (-18 dBFS) before mixing and the sum is limited to about -1 dBFS. A beat view is naturally 8-12 dB quieter than an instrumental; matching fixes the level, but it still *sounds* thinner, and the panel says so.
+- **Quality:** everything is rendered at 44.1 kHz mono (22.05 kHz audio is only for tempo/key/beat analysis) and exported at 192 kbps. Tempo stretching uses ffmpeg `atempo`: librosa's stretch measurably cost 3.5-4 dB of loudness on every stretched clip.
+- **Debugging:** `python -m mixing.debug <a_id> <b_id>` writes one WAV per stage and prints sample rate, level, peak, spectral centroid and high-frequency share per stage and song (temp files, delete when done).
+
 **Planned upgrade (not built):** drag in the two full audio files for one pair; Cue analyzes the tempo map and sections, matches sections, deletes the audio and caches only the analysis. The renderer only needs (audio, sample rate, analysis) per song, so this fits without redesign.
 
 ## Mix snippets (blend styles)

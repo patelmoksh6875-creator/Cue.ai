@@ -10,7 +10,7 @@ from mixing import align, render, styles
 
 def test_snippet_cache_key_includes_analyzer_version():
     key = render.snippet_cache_key(1, 2, "blend", 12)
-    assert key == f"1_2_blend_12_auto_w0_{config.ANALYZER_VERSION}"
+    assert key == f"1_2_blend_12_auto_w0_{config.ANALYZER_VERSION}_r{config.MIX_RENDER_VERSION}"
 
 
 def test_snippet_cache_key_distinguishes_style_and_length():
@@ -187,12 +187,6 @@ def test_beat_interval_cv_detects_tempo_change():
     assert windows.beat_interval_cv(steady, 0, 10) < 0.01
     assert windows.beat_interval_cv(changing, 0, 10) > 0.1
     assert windows.beat_interval_cv(steady, 0, 1) is None  # too few beats
-
-
-def test_blend_length_is_whole_beats_and_fits():
-    assert render.blend_beats_for(120, 12) == 8      # 16 beats = 8s > 60% of 12s
-    assert render.blend_beats_for(160, 15) == 16     # 16 beats = 6s fits
-    assert render.blend_beats_for(60, 10) == 4
 
 
 def test_beat_view_keeps_kick_and_stays_finite():

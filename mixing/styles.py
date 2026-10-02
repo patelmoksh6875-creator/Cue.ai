@@ -32,27 +32,47 @@ def _equal_power_fade(n: int) -> tuple[np.ndarray, np.ndarray]:
     return fade_out, fade_in
 
 
+def lr_split(y: np.ndarray, sr: int, cutoff_hz: float) -> tuple[np.ndarray, np.ndarray]:
+    """Linkwitz-Riley (LR4) crossover: zero-phase Butterworth low-pass applied
+    forward+backward; the high band is the exact complement."""
+    from scipy.signal import butter, sosfiltfilt  # scipy ships with librosa
+
+    low = sosfiltfilt(butter(2, cutoff_hz, "low", fs=sr, output="sos"), y, padlen=min(len(y) - 1, 4 * sr // 10))
+    # High band is the exact complement: (1 - LP^2) equals the LR4 high-pass
+    # magnitude, and low + high == input at every sample (no edge clicks).
+    return low.astype(np.float32), (y - low).astype(np.float32)
+
+
+def blend_gains(n: int, swap=None) -> dict:
+    """Gain curves over the overlap (position p: 0 -> 1).
+
+    Mids/highs: equal-power crossfade. Bass: A's low end stays until the swap
+    window, then hands over so the two basslines are never both above -6 dB."""
+    import config
+
+    lo, hi = swap or config.MIX_BASS_SWAP_WINDOW
+    p = np.linspace(0.0, 1.0, n)
+    q = np.clip((p - lo) / (hi - lo), 0.0, 1.0)
+    return {
+        "p": p,
+        "a_high": np.cos(p * np.pi / 2),
+        "b_high": np.sin(p * np.pi / 2),
+        "a_low": np.clip(1.0 - 1.5 * q, 0.0, 1.0),
+        "b_low": np.clip(1.5 * q - 0.5, 0.0, 1.0),
+    }
+
+
 def blend(a: np.ndarray, b: np.ndarray, sr: int) -> np.ndarray:
-    """Default style: beat-matched equal-power crossfade with an EQ bass
-    swap -- A's low end cuts out faster as B's comes in, the standard DJ
-    transition, instead of both basslines clashing throughout the blend."""
+    """Default style: both songs play together through the whole overlap.
+    Equal-power crossfade on mids/highs plus a bass swap around the middle."""
+    import config
+
     n = min(len(a), len(b))
     a, b = a[:n], b[:n]
-    fade_out, fade_in = _equal_power_fade(n)
-
-    low_a, high_a = split_bands(a, sr)
-    low_b, high_b = split_bands(b, sr)
-
-    # Bass swaps over the first 60% of the blend (faster than the overall
-    # fade) so the low end doesn't clash for the whole transition.
-    bass_n = max(1, int(n * 0.6))
-    bass_fade_out, bass_fade_in = _equal_power_fade(bass_n)
-    low_fade_out = np.concatenate([bass_fade_out, np.zeros(n - bass_n)])
-    low_fade_in = np.concatenate([bass_fade_in, np.ones(n - bass_n)])
-
-    low_mix = low_a * low_fade_out + low_b * low_fade_in
-    high_mix = high_a * fade_out + high_b * fade_in
-    return low_mix + high_mix
+    g = blend_gains(n)
+    low_a, high_a = lr_split(a, sr, config.MIX_BASS_CROSSOVER_HZ)
+    low_b, high_b = lr_split(b, sr, config.MIX_BASS_CROSSOVER_HZ)
+    return high_a * g["a_high"] + high_b * g["b_high"] + low_a * g["a_low"] + low_b * g["b_low"]
 
 
 def cut(a: np.ndarray, b: np.ndarray, sr: int) -> np.ndarray:

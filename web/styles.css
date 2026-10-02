@@ -241,3 +241,5 @@ audio#player { position: fixed; left: 50%; bottom: 1rem; transform: translateX(-
 .btn.is-on { background: var(--amber); border-color: var(--amber); font-weight: 500; }
 .mix-note { color: var(--text-2); font-size: 0.85rem; border-top: 1px solid var(--text-4); padding-top: 0.5rem; margin-top: 0.2rem; }
 .mix-panel[aria-busy="true"] { opacity: 0.6; }
+
+.mix-timeline { font-weight: 500; font-size: 0.92rem; }

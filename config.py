@@ -133,10 +133,25 @@ INSTRUMENTAL_NEGATIVE_TTL_DAYS = 30
 # 808/bass are present. Trap-style beats lean on that low end. Change by
 # listening; see README "Beat view".
 BEATVIEW_ADD_LOW_END = True
-BEATVIEW_LOW_END_HZ = 120
+BEATVIEW_LOW_END_HZ = 150  # widened from 120 to match the mix crossover
 BEATVIEW_HPSS_MARGIN = 3.0
 
 # --- Mix snippet window search ---------------------------------------------------
 MIX_WINDOW_CANDIDATES = 3
 MIX_BLEND_BEATS_LONG = 16
 MIX_BLEND_BEATS_SHORT = 8
+
+# --- Preview mix render (V4 fix) ---------------------------------------------------
+# Render everything at one common rate/channel layout. 22.05 kHz audio is for
+# ANALYSIS only (beats/tempo/key/windows); rendering at it capped the mix at 11 kHz.
+RENDER_SAMPLE_RATE = 44100
+MIX_RENDER_VERSION = 2            # bump to invalidate cached snippets after render changes
+MIX_OVERLAP_BEAT_OPTIONS = (16, 8, 4)   # largest that fits (overlap <= length - 2 * MIX_MIN_SOLO_S)
+MIX_MIN_SOLO_S = 2.0              # at least this much of A alone, and of B alone
+MIX_TARGET_RMS_DBFS = -18.0       # both clips are matched to this before mixing
+MIX_PEAK_CEILING_DBFS = -1.0      # final limiter target
+MIX_BASS_CROSSOVER_HZ = 150
+MIX_BASS_SWAP_WINDOW = (0.4, 0.6)  # overlap position where the low end hands over
+# Beat view fullness: optional gentle broadband copy of the original (0 = off).
+# Higher = fuller but lets more vocal through. Choose by ear.
+BEATVIEW_BROADBAND_MIX = 0.0

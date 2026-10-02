@@ -44,11 +44,40 @@ def plan_tempo_match(seed_bpm: float, candidate_bpm: float) -> TempoMatch:
     )
 
 
-def time_stretch(y: np.ndarray, ratio: float) -> np.ndarray:
-    """Stretch audio so its tempo multiplies by `ratio` (>1 = faster)."""
+def time_stretch(y: np.ndarray, ratio: float, sr: int = 22050) -> np.ndarray:
+    """Stretch audio so its tempo multiplies by `ratio` (>1 = faster).
+
+    Uses ffmpeg's `atempo`: measured on real previews, librosa's phase-vocoder
+    time_stretch cost 3.5-4 dB of loudness (and smeared transients) at ANY
+    ratio, which made the stretched song sound dim; atempo preserved level
+    and crest factor. Falls back to librosa only if ffmpeg is unavailable."""
     if abs(ratio - 1.0) < 1e-3:
         return y
-    return librosa.effects.time_stretch(y, rate=ratio)
+    import os
+    import subprocess
+    import tempfile
+
+    import soundfile as sf
+
+    filters, r = [], ratio
+    while r > 2.0:
+        filters.append("atempo=2.0"); r /= 2.0
+    while r < 0.5:
+        filters.append("atempo=0.5"); r /= 0.5
+    filters.append(f"atempo={r:.6f}")
+    src = tempfile.NamedTemporaryFile(suffix=".wav", delete=False).name
+    dst = tempfile.NamedTemporaryFile(suffix=".wav", delete=False).name
+    try:
+        sf.write(src, y, sr)
+        subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", src, "-filter:a", ",".join(filters), dst], check=True)
+        out, _ = sf.read(dst, dtype="float32")
+        return out
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return librosa.effects.time_stretch(y, rate=ratio)
+    finally:
+        for f in (src, dst):
+            if os.path.exists(f):
+                os.unlink(f)
 
 
 def _low_freq_envelope(y: np.ndarray, sr: int, cutoff_hz: float = 150.0) -> np.ndarray:
