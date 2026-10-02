@@ -7,7 +7,10 @@ logic; it only checks the environment, starts/stops/inspects the FastAPI
 server in server/main.py, and opens a browser tab.
 
 Subcommands:
-  python cue.py               start the server if needed, open the browser
+  python cue.py               start the server if needed and print its URL
+                               (copy/paste it into a browser; works from an
+                               IDE's run button)
+  python cue.py --open        same, and also open the browser for you
   python cue.py stop          stop the running server
   python cue.py status        show whether Cue is running and where
   python cue.py logs          print the server log
@@ -179,7 +182,22 @@ def find_running_server() -> dict | None:
     return info
 
 
-def start() -> None:
+def _announce(port: int, already_running: bool, open_browser: bool) -> None:
+    """Print the URL prominently so it can be copied from an IDE's run
+    panel into any browser. Only opens a browser itself on request."""
+    url = f"http://127.0.0.1:{port}"
+    state = "already running" if already_running else "running"
+    print()
+    print(f"  Cue is {state}. Copy this into your browser:")
+    print()
+    print(f"      {url}")
+    print()
+    print("  Stop it with: python cue.py stop")
+    if open_browser:
+        webbrowser.open(url)
+
+
+def start(open_browser: bool = False) -> None:
     check_python_version()
     check_dependencies()
     check_ffmpeg()
@@ -188,8 +206,7 @@ def start() -> None:
 
     running = find_running_server()
     if running is not None:
-        print(f"Cue is already running at http://127.0.0.1:{running['port']} -- opening browser.")
-        webbrowser.open(f"http://127.0.0.1:{running['port']}")
+        _announce(running["port"], already_running=True, open_browser=open_browser)
         return
 
     port = find_free_port(DEFAULT_PORT)
@@ -228,8 +245,7 @@ def start() -> None:
     deadline = time.monotonic() + HEALTH_TIMEOUT_S
     while time.monotonic() < deadline:
         if _health_check(port):
-            webbrowser.open(f"http://127.0.0.1:{port}")
-            print(f"Cue is running at http://127.0.0.1:{port} -- `python cue.py stop` to quit.")
+            _announce(port, already_running=False, open_browser=open_browser)
             return
         if proc.poll() is not None:
             print(f"Cue's server process exited unexpectedly. Check the log:\n  {LOG_FILE}")
@@ -314,7 +330,7 @@ if [ ! -x "$PYTHON" ]; then
     exit 1
 fi
 
-OUTPUT=$("$PYTHON" cue.py 2>&1)
+OUTPUT=$("$PYTHON" cue.py --open 2>&1)
 STATUS=$?
 printf '%s\\n' "$OUTPUT" >> "$LOG_FILE"
 
@@ -403,6 +419,9 @@ COMMANDS = {
 def main() -> None:
     sys.stdout.reconfigure(line_buffering=True)
     command = sys.argv[1] if len(sys.argv) > 1 else "start"
+    if command == "--open":
+        start(open_browser=True)
+        return
     handler = COMMANDS.get(command)
     if handler is None:
         print(f"Unknown command: {command}\nUsage: python cue.py [start|stop|status|logs|install-app]")
