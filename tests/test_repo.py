@@ -138,3 +138,12 @@ def test_match_run_log_and_fetch(conn):
     assert len(runs) == 1
     assert runs[0].candidate_id == 101
     assert runs[0].total_score == 0.85
+
+
+def test_connection_self_heals_when_db_file_is_wiped(tmp_path, monkeypatch):
+    path = tmp_path / "wiped.sqlite3"
+    repo.init_db(path)
+    path.write_bytes(b"")  # simulate the file being deleted/emptied under a live server
+    monkeypatch.setattr(repo.config, "DB_PATH", path)
+    repo.upsert_artist(repo.Artist(id=1, name="A"))
+    assert repo.get_artist(1).name == "A"

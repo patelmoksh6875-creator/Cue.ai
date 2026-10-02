@@ -25,6 +25,14 @@ def get_connection(db_path: Path | str | None = None) -> Iterator[sqlite3.Connec
     conn = sqlite3.connect(db_path or config.DB_PATH)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    # Self-heal: if the DB file was deleted/replaced while the server was
+    # running, SQLite silently makes an empty one with no tables. Recreate
+    # the schema instead of failing every request with "no such table".
+    if conn.execute("SELECT 1 FROM sqlite_master WHERE name='tracks'").fetchone() is None:
+        conn.executescript(SCHEMA_PATH.read_text())
+        if conn.execute("SELECT 1 FROM schema_version").fetchone() is None:
+            conn.execute("INSERT INTO schema_version (version) VALUES (?)", (CURRENT_SCHEMA_VERSION,))
+        conn.commit()
     try:
         yield conn
         conn.commit()

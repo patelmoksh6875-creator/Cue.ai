@@ -15,7 +15,10 @@ import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+import logging
+
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from db import repo
@@ -35,6 +38,18 @@ async def _lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Cue", lifespan=_lifespan)
+logger = logging.getLogger("cue.server")
+
+
+@app.exception_handler(Exception)
+async def _unhandled(request: Request, exc: Exception):
+    """Never return a bare "Internal Server Error": log the full traceback
+    to logs/cue.log and tell the UI what actually failed."""
+    logger.exception("Unhandled error on %s %s", request.method, request.url.path)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"Server error ({type(exc).__name__}: {exc}). See logs/cue.log or run: python cue.py logs"},
+    )
 
 app.include_router(health.router, prefix="/api")
 app.include_router(search.router, prefix="/api")
