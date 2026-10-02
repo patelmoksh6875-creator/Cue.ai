@@ -52,7 +52,8 @@ class AnalysisResult:
 def download_preview(preview_url: str) -> Path:
     resp = httpx.get(preview_url, timeout=15.0, follow_redirects=True)
     resp.raise_for_status()
-    tmp = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False)
+    suffix = Path(preview_url.split("?")[0]).suffix or ".mp3"  # iTunes previews are .m4a
+    tmp = tempfile.NamedTemporaryFile(suffix=suffix, delete=False)
     tmp.write(resp.content)
     tmp.close()
     return Path(tmp.name)
@@ -77,41 +78,45 @@ def _estimate_key(chroma_mean: np.ndarray) -> tuple[str, str]:
     return label, camelot
 
 
+def analyze_samples(
+    y: np.ndarray, sr: int, deezer_bpm: Optional[float] = None
+) -> AnalysisResult:
+    """BPM/key/energy on already-decoded audio -- used for the full-mix
+    preview, an official instrumental, or the drums+low-end beat view."""
+    tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
+    bpm = float(np.atleast_1d(tempo)[0])
+
+    # Onset-strength-based confidence proxy: how peaky/regular the beat is.
+    onset_env = librosa.onset.onset_strength(y=y, sr=sr)
+    bpm_confidence = float(
+        np.clip(np.std(onset_env) / (np.mean(onset_env) + 1e-6) / 3.0, 0.0, 1.0)
+    )
+
+    chroma = librosa.feature.chroma_cqt(y=y, sr=sr)
+    key_label, camelot = _estimate_key(chroma.mean(axis=1))
+
+    rms = librosa.feature.rms(y=y)[0]
+    # Empirically, mastered previews sit around rms 0.05-0.3; scale so
+    # that range maps to roughly 0.2-1.0 rather than saturating at 1.
+    energy = float(np.clip(np.mean(rms) * 4, 0.0, 1.0))
+
+    return AnalysisResult(
+        bpm=bpm,
+        bpm_confidence=bpm_confidence,
+        key=key_label,
+        camelot=camelot,
+        energy=energy,
+        bpm_disagreement=_bpm_disagreement(bpm, deezer_bpm),
+    )
+
+
 def analyze_preview(preview_url: str, deezer_bpm: Optional[float] = None) -> AnalysisResult:
-    """Download a preview, decode it, and run BPM/key/energy analysis.
-    Cleans up the temp file when done, even on error."""
+    """Download a preview, decode it, and analyze it. Cleans up the temp
+    file when done, even on error."""
     tmp_path = download_preview(preview_url)
     try:
         y, sr = librosa.load(str(tmp_path), sr=config.PREVIEW_SAMPLE_RATE, mono=True)
-
-        tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
-        bpm = float(np.atleast_1d(tempo)[0])
-
-        # Onset-strength-based confidence proxy: how peaky/regular the beat is.
-        onset_env = librosa.onset.onset_strength(y=y, sr=sr)
-        bpm_confidence = float(
-            np.clip(np.std(onset_env) / (np.mean(onset_env) + 1e-6) / 3.0, 0.0, 1.0)
-        )
-
-        chroma = librosa.feature.chroma_cqt(y=y, sr=sr)
-        chroma_mean = chroma.mean(axis=1)
-        key_label, camelot = _estimate_key(chroma_mean)
-
-        rms = librosa.feature.rms(y=y)[0]
-        # Empirically, mastered previews sit around rms 0.05-0.3; scale so
-        # that range maps to roughly 0.2-1.0 rather than saturating at 1.
-        energy = float(np.clip(np.mean(rms) * 4, 0.0, 1.0))
-
-        disagreement = _bpm_disagreement(bpm, deezer_bpm)
-
-        return AnalysisResult(
-            bpm=bpm,
-            bpm_confidence=bpm_confidence,
-            key=key_label,
-            camelot=camelot,
-            energy=energy,
-            bpm_disagreement=disagreement,
-        )
+        return analyze_samples(y, sr, deezer_bpm)
     finally:
         tmp_path.unlink(missing_ok=True)
 

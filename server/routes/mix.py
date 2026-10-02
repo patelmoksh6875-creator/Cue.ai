@@ -20,37 +20,36 @@ class MixRequest(BaseModel):
     b_id: int
     style: str = "blend"
     length_seconds: int = render.DEFAULT_LENGTH_S
+    source: str = "auto"      # auto | instrumental | beat_view | full_mix
+    window_rank: int = 0      # 0 = best window pair; 1/2 = alternatives
+
+
+def _result_payload(cache_key: str, info: dict) -> dict:
+    return {"snippet_url": f"/api/snippet/{cache_key}.mp3", **info}
 
 
 @router.post("/mix-snippet")
 def mix_snippet(req: MixRequest) -> dict:
-    cache_key = render.snippet_cache_key(req.a_id, req.b_id, req.style, req.length_seconds)
-    if render.snippet_path(cache_key).exists():
-        return {"job_id": None, "snippet_url": f"/api/snippet/{cache_key}.mp3"}
+    if req.source not in render.SOURCES:
+        raise HTTPException(status_code=400, detail=f"Unknown source '{req.source}'")
+    cache_key = render.snippet_cache_key(
+        req.a_id, req.b_id, req.style, req.length_seconds, req.source, req.window_rank
+    )
+    cached = render.load_cached_info(cache_key)
+    if cached is not None:
+        return {"job_id": None, **_result_payload(cache_key, cached)}
 
     def work(job) -> dict:
-        job.progress = "Rendering mix snippet..."
+        job.progress = "Looking for instrumentals and rendering..."
         try:
-            result = render.build_snippet(req.a_id, req.b_id, req.style, req.length_seconds)
+            result = render.build_snippet(
+                req.a_id, req.b_id, req.style, req.length_seconds, req.source, req.window_rank
+            )
         except render.MixError as exc:
             raise RuntimeError(str(exc)) from exc
-        return {
-            "snippet_url": f"/api/snippet/{cache_key}.mp3",
-            "warnings": {
-                "stretch_exceeds_quality": result.warnings.stretch_exceeds_quality,
-                "stretch_pct": result.warnings.stretch_pct,
-                "key_incompatible": result.warnings.key_incompatible,
-                "low_confidence_bpm": result.warnings.low_confidence_bpm,
-            },
-            "note": (
-                "This is a sample of how the two previews sound together, not the "
-                "real transition point in the full tracks -- Deezer previews are a "
-                "30s clip from somewhere in the song, not the actual intro/outro."
-            ),
-        }
+        return _result_payload(cache_key, result.info)
 
-    job_id = create_job(work)
-    return {"job_id": job_id, "snippet_url": None}
+    return {"job_id": create_job(work), "snippet_url": None}
 
 
 @router.get("/mix-snippet/{job_id}")

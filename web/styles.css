@@ -230,3 +230,14 @@ audio#player { position: fixed; left: 50%; bottom: 1rem; transform: translateX(-
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .glass, .search-pill, .result-card { background: rgba(250, 251, 255, 0.95); }
 }
+
+/* ---------- Mix preview panel ---------- */
+.mix-panel { padding: 1rem 1.2rem; border-radius: 20px; display: flex; flex-direction: column; gap: 0.5rem; }
+.mix-title { font-weight: 500; font-size: 1.05rem; }
+.mix-sub { color: var(--text-2); font-size: 0.88rem; }
+.mix-song { display: flex; flex-direction: column; gap: 0.1rem; }
+.mix-row { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
+.mix-label { color: var(--text-2); font-size: 0.9rem; min-width: 4rem; }
+.btn.is-on { background: var(--amber); border-color: var(--amber); font-weight: 500; }
+.mix-note { color: var(--text-2); font-size: 0.85rem; border-top: 1px solid var(--text-4); padding-top: 0.5rem; margin-top: 0.2rem; }
+.mix-panel[aria-busy="true"] { opacity: 0.6; }

@@ -22,6 +22,7 @@ const els = {
   results: document.getElementById("results"),
   player: document.getElementById("player"),
   offlineOverlay: document.getElementById("offline-overlay"),
+  mixPanel: document.getElementById("mix-panel"),
 };
 
 const state = {
@@ -150,29 +151,38 @@ els.player.addEventListener("ended", () => {
   state.activePlayButton = null;
 });
 
-async function previewMix(result, button) {
-  const original = button.textContent;
-  button.disabled = true;
+const mixState = { result: null, source: "auto", rank: 0, button: null };
+
+async function runMix(result, button) {
+  const original = button ? button.textContent : "";
+  if (button) button.disabled = true;
+  els.mixPanel.setAttribute("aria-busy", "true");
   try {
-    const { snippetUrl, warnings, note } = await api.getMixSnippet(
-      state.seedId,
-      result.id,
-      "blend",
-      12,
-      (progress) => {
-        button.textContent = progress || "Rendering...";
-      }
+    const out = await api.getMixSnippet(
+      state.seedId, result.id, "blend", 12, mixState.source, mixState.rank,
+      (progress) => { if (button) button.textContent = progress || "Rendering..."; }
     );
-    els.player.src = snippetUrl;
+    mixState.result = result;
+    mixState.rank = out.window_rank;
+    els.player.src = out.snippet_url;
     els.player.hidden = false;
-    els.player.play();
-    ui.renderMixNote(els.resultsNote, note, warnings);
+    els.player.play().catch(() => {});
+    ui.renderMixPanel(els.mixPanel, out, { source: mixState.source }, {
+      onSource: (value) => { mixState.source = value; mixState.rank = 0; runMix(result, null); },
+      onWindow: (rank) => { mixState.rank = rank; runMix(result, null); },
+    });
   } catch (err) {
-    ui.renderError(els.resultsNote, `Mix snippet: ${err.message}`);
+    ui.renderError(els.resultsNote, `Mix preview: ${err.message}`);
   } finally {
-    button.disabled = false;
-    button.textContent = original;
+    els.mixPanel.removeAttribute("aria-busy");
+    if (button) { button.disabled = false; button.textContent = original; }
   }
+}
+
+function previewMix(result, button) {
+  mixState.source = "auto";
+  mixState.rank = 0;
+  return runMix(result, button);
 }
 
 let searchDebounce = null;
@@ -224,6 +234,7 @@ els.findMatchesBtn.addEventListener("click", async () => {
   ui.renderProgress(els.matchProgress, "Starting...");
   els.results.textContent = "";
   els.resultsNote.hidden = true;
+  els.mixPanel.hidden = true;
 
   try {
     const jobId = await api.startMatch(state.seedId);

@@ -94,7 +94,7 @@ SAFE_BPM_SCORE_MIN = 0.85
 SAFE_KEY_SCORE_MIN = 0.85
 
 # --- Audio analysis ----------------------------------------------------
-ANALYZER_VERSION = 1
+ANALYZER_VERSION = 2  # 2: audio_features keyed by (track_id, audio_source)
 PREVIEW_SAMPLE_RATE = 22050  # librosa default; keep explicit for reproducibility
 
 # --- Config version (bump whenever SCORE_WEIGHTS or thresholds change) ----
@@ -116,3 +116,27 @@ GROQ_MODELS_ORDERED = [GROQ_MODEL_PRIMARY, GROQ_MODEL_FALLBACK]
 # Groq is optional. When False (or no key set), the pipeline runs fully
 # deterministic with templated explanations.
 GROQ_ENABLED = bool(GROQ_API_KEY)
+
+# --- Instrumental lookup (V4) --------------------------------------------------
+ITUNES_BASE_URL = "https://itunes.apple.com"
+ITUNES_MAX_REQUESTS = 15      # iTunes Search soft limit is ~20/min; stay under it
+ITUNES_PER_SECONDS = 60.0
+# An instrumental must run about as long as the original (seconds).
+INSTRUMENTAL_DURATION_TOLERANCE_S = 12
+# Below this confidence a candidate is treated as "none found".
+INSTRUMENTAL_MIN_CONFIDENCE = 0.75
+# Negative results (no instrumental exists) are re-checked after this long.
+INSTRUMENTAL_NEGATIVE_TTL_DAYS = 30
+
+# --- Beat view fallback (drums + low end, no ML) ---------------------------------
+# Mix the original's low end (below BEATVIEW_LOW_END_HZ) back in so kick and
+# 808/bass are present. Trap-style beats lean on that low end. Change by
+# listening; see README "Beat view".
+BEATVIEW_ADD_LOW_END = True
+BEATVIEW_LOW_END_HZ = 120
+BEATVIEW_HPSS_MARGIN = 3.0
+
+# --- Mix snippet window search ---------------------------------------------------
+MIX_WINDOW_CANDIDATES = 3
+MIX_BLEND_BEATS_LONG = 16
+MIX_BLEND_BEATS_SHORT = 8

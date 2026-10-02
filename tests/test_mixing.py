@@ -10,14 +10,16 @@ from mixing import align, render, styles
 
 def test_snippet_cache_key_includes_analyzer_version():
     key = render.snippet_cache_key(1, 2, "blend", 12)
-    assert key == f"1_2_blend_12_{config.ANALYZER_VERSION}"
+    assert key == f"1_2_blend_12_auto_w0_{config.ANALYZER_VERSION}"
 
 
 def test_snippet_cache_key_distinguishes_style_and_length():
     a = render.snippet_cache_key(1, 2, "blend", 12)
     b = render.snippet_cache_key(1, 2, "cut", 12)
     c = render.snippet_cache_key(1, 2, "blend", 15)
-    assert len({a, b, c}) == 3
+    d = render.snippet_cache_key(1, 2, "blend", 12, source="beat_view")
+    e = render.snippet_cache_key(1, 2, "blend", 12, window_rank=1)
+    assert len({a, b, c, d, e}) == 5
 
 
 def test_snippet_path_lives_under_snippet_dir():
@@ -122,3 +124,87 @@ def test_cut_is_a_then_b_with_no_nans():
     assert out[0] == pytest.approx(1.0)
     assert out[-1] == pytest.approx(-1.0)
     assert np.all(np.isfinite(out))
+
+
+# ---- synthetic click tracks: known tempo and offset --------------------------
+from mixing import beatview, windows  # noqa: E402
+
+SR = 22050
+
+
+def click_track(bpm, seconds, offset_s=0.0):
+    y = np.zeros(int(SR * seconds), dtype=np.float32)
+    beat = 60.0 / bpm
+    t = offset_s
+    burst = np.sin(2 * np.pi * 60 * np.arange(int(0.05 * SR)) / SR).astype(np.float32) * np.hanning(int(0.05 * SR))
+    while t < seconds - 0.1:
+        i = int(t * SR)
+        y[i : i + len(burst)] += burst
+        t += beat
+    return y
+
+
+def test_best_beat_offset_finds_known_offset():
+    a = click_track(120, 8, 0.0)
+    b = click_track(120, 8, 0.2)
+    beats_b = np.arange(0.2, 8, 0.5)
+    off = align.best_beat_offset(a, b, SR, beats_b)
+    # B's beats sit 0.2s late; starting B on one of its own beats keeps the grids locked.
+    assert any(abs(off - bt) < 0.03 for bt in beats_b[:4])
+
+
+def test_window_ranking_locks_a_shifted_click_track():
+    a = click_track(120, 20, 0.0)
+    b = click_track(120, 20, 0.15)  # same tempo, kicks 150 ms late
+    beats_a = np.arange(0, 20, 0.5)
+    beats_b = np.arange(0.15, 20, 0.5)
+    cands = windows.rank_windows(a, b, SR, beats_a, beats_b, blend_s=6.0, lead_s=3.0, tail_s=3.0, bpm=120)
+    assert cands and cands[0].drum_corr > 0.8
+    # B's kicks are 150 ms late, so the kicks coincide when B's window starts
+    # 150 ms (mod one beat) after A's -- within 40 ms.
+    delta = (cands[0].b_blend_start - cands[0].a_blend_start) % 0.5
+    assert min(abs(delta - 0.15), abs(delta - 0.15 + 0.5), abs(delta - 0.15 - 0.5)) < 0.04
+
+
+def test_window_ranking_returns_distinct_candidates():
+    a = click_track(120, 25)
+    b = click_track(120, 25)
+    cands = windows.rank_windows(a, b, SR, np.arange(0, 25, 0.5), np.arange(0, 25, 0.5), 6.0, 3.0, 3.0, 120)
+    assert 1 < len(cands) <= 3
+    for i, c in enumerate(cands):
+        for d in cands[i + 1:]:
+            assert abs(c.a_blend_start - d.a_blend_start) >= 2.5 or abs(c.b_blend_start - d.b_blend_start) >= 2.5
+
+
+def test_window_ranking_empty_when_clip_too_short():
+    short = click_track(120, 5)
+    assert windows.rank_windows(short, short, SR, np.arange(0, 5, 0.5), np.arange(0, 5, 0.5), 6.0, 3.0, 3.0, 120) == []
+
+
+def test_beat_interval_cv_detects_tempo_change():
+    steady = np.arange(0, 10, 0.5)
+    changing = np.concatenate([np.arange(0, 5, 0.5), 5 + np.arange(0, 5, 0.3)])
+    assert windows.beat_interval_cv(steady, 0, 10) < 0.01
+    assert windows.beat_interval_cv(changing, 0, 10) > 0.1
+    assert windows.beat_interval_cv(steady, 0, 1) is None  # too few beats
+
+
+def test_blend_length_is_whole_beats_and_fits():
+    assert render.blend_beats_for(120, 12) == 8      # 16 beats = 8s > 60% of 12s
+    assert render.blend_beats_for(160, 15) == 16     # 16 beats = 6s fits
+    assert render.blend_beats_for(60, 10) == 4
+
+
+def test_beat_view_keeps_kick_and_stays_finite():
+    y = click_track(120, 6)
+    out = beatview.make_beat_view(y, SR, add_low_end=True, low_end_hz=120)
+    assert np.all(np.isfinite(out)) and np.max(np.abs(out)) <= 1.0 and len(out) == len(y)
+    no_low = beatview.make_beat_view(y, SR, add_low_end=False)
+    assert np.sqrt(np.mean(out**2)) >= np.sqrt(np.mean(no_low**2)) * 0.9
+
+
+def test_grid_overlap_and_drift_helpers():
+    g = np.arange(0, 10, 0.5)
+    assert render._grid_overlap(g, g + 0.01) == 1.0
+    assert render._grid_overlap(g, g + 0.25) == 0.0
+    assert render._half_tempo_drift(g) < 0.01

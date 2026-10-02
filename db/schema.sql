@@ -47,15 +47,35 @@ CREATE TABLE IF NOT EXISTS tags (
 
 CREATE INDEX IF NOT EXISTS idx_tags_track_id ON tags(track_id);
 
+-- Keyed by (track_id, audio_source): the same song is analyzed on its
+-- full-mix preview ('full_mix', used for matching scores), its official
+-- instrumental ('instrumental'), and the drums+low-end beat view
+-- ('beat_view'). Stores analysis only -- never audio.
 CREATE TABLE IF NOT EXISTS audio_features (
-    track_id INTEGER PRIMARY KEY REFERENCES tracks(id),
+    track_id INTEGER NOT NULL REFERENCES tracks(id),
+    audio_source TEXT NOT NULL DEFAULT 'full_mix',
     bpm_verified REAL,
     bpm_confidence REAL,
     key TEXT,
     camelot TEXT,
     energy REAL,
     analyzer_version INTEGER NOT NULL,
-    analyzed_at TEXT NOT NULL
+    analyzed_at TEXT NOT NULL,
+    PRIMARY KEY (track_id, audio_source)
+);
+
+-- Cache of official-instrumental lookups, INCLUDING negative results
+-- (found = 0) so we don't re-hit Deezer/iTunes for songs that have none.
+CREATE TABLE IF NOT EXISTS instrumental_links (
+    track_id INTEGER PRIMARY KEY REFERENCES tracks(id),
+    found INTEGER NOT NULL,
+    source TEXT,
+    source_track_id TEXT,
+    title TEXT,
+    artist TEXT,
+    duration INTEGER,
+    confidence REAL,
+    checked_at TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS match_runs (

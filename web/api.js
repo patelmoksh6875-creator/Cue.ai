@@ -61,19 +61,19 @@ export function previewUrl(trackId) {
   return `/api/preview/${trackId}`;
 }
 
-// Returns { snippetUrl, warnings, note } either immediately (cache hit,
-// job_id is null) or after polling the render job to completion.
-export async function getMixSnippet(aId, bId, style, lengthSeconds, onProgress) {
-  const { job_id, snippet_url } = await getJSON("/api/mix-snippet", {
+// Resolves to the full mix-snippet result (snippet_url, a/b source info,
+// windows, warnings, note) either immediately (cache hit) or after polling.
+export async function getMixSnippet(aId, bId, style, lengthSeconds, source, windowRank, onProgress) {
+  const first = await getJSON("/api/mix-snippet", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ a_id: aId, b_id: bId, style, length_seconds: lengthSeconds }),
+    body: JSON.stringify({
+      a_id: aId, b_id: bId, style, length_seconds: lengthSeconds,
+      source, window_rank: windowRank,
+    }),
   });
-  if (job_id === null) {
-    return { snippetUrl: snippet_url, warnings: null, note: null };
-  }
-  const result = await pollUntilDone(job_id, pollMixSnippet, onProgress);
-  return { snippetUrl: result.snippet_url, warnings: result.warnings, note: result.note };
+  if (first.job_id === null) return first;
+  return pollUntilDone(first.job_id, pollMixSnippet, onProgress);
 }
 
 export function pollMixSnippet(jobId) {

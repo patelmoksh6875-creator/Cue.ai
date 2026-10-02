@@ -41,6 +41,16 @@ app = FastAPI(title="Cue", lifespan=_lifespan)
 logger = logging.getLogger("cue.server")
 
 
+@app.middleware("http")
+async def _no_cache_static(request: Request, call_next):
+    """Local dev tool: always revalidate the UI files so a code update is
+    never half-applied by a stale cached module (e.g. old api.js + new app.js)."""
+    response = await call_next(request)
+    if not request.url.path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
 @app.exception_handler(Exception)
 async def _unhandled(request: Request, exc: Exception):
     """Never return a bare "Internal Server Error": log the full traceback

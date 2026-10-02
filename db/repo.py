@@ -13,7 +13,7 @@ from typing import Iterator, Optional
 import config
 
 SCHEMA_PATH = Path(__file__).resolve().parent / "schema.sql"
-CURRENT_SCHEMA_VERSION = 1
+CURRENT_SCHEMA_VERSION = 2
 
 
 def _now() -> str:
@@ -29,10 +29,7 @@ def get_connection(db_path: Path | str | None = None) -> Iterator[sqlite3.Connec
     # running, SQLite silently makes an empty one with no tables. Recreate
     # the schema instead of failing every request with "no such table".
     if conn.execute("SELECT 1 FROM sqlite_master WHERE name='tracks'").fetchone() is None:
-        conn.executescript(SCHEMA_PATH.read_text())
-        if conn.execute("SELECT 1 FROM schema_version").fetchone() is None:
-            conn.execute("INSERT INTO schema_version (version) VALUES (?)", (CURRENT_SCHEMA_VERSION,))
-        conn.commit()
+        _apply_schema(conn)
     try:
         yield conn
         conn.commit()
@@ -43,16 +40,41 @@ def get_connection(db_path: Path | str | None = None) -> Iterator[sqlite3.Connec
         conn.close()
 
 
+def _apply_schema(conn: sqlite3.Connection) -> None:
+    """Create missing tables, migrate older layouts, stamp the version."""
+    conn.executescript(SCHEMA_PATH.read_text())
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(audio_features)")]
+    if "audio_source" not in cols:
+        # v1 -> v2: audio_features gains audio_source and a composite key.
+        conn.executescript(
+            """
+            ALTER TABLE audio_features RENAME TO audio_features_v1;
+            CREATE TABLE audio_features (
+                track_id INTEGER NOT NULL REFERENCES tracks(id),
+                audio_source TEXT NOT NULL DEFAULT 'full_mix',
+                bpm_verified REAL, bpm_confidence REAL, key TEXT, camelot TEXT, energy REAL,
+                analyzer_version INTEGER NOT NULL, analyzed_at TEXT NOT NULL,
+                PRIMARY KEY (track_id, audio_source)
+            );
+            INSERT INTO audio_features
+                (track_id, audio_source, bpm_verified, bpm_confidence, key, camelot, energy,
+                 analyzer_version, analyzed_at)
+            SELECT track_id, 'full_mix', bpm_verified, bpm_confidence, key, camelot, energy,
+                   analyzer_version, analyzed_at FROM audio_features_v1;
+            DROP TABLE audio_features_v1;
+            """
+        )
+    if conn.execute("SELECT 1 FROM schema_version").fetchone() is None:
+        conn.execute("INSERT INTO schema_version (version) VALUES (?)", (CURRENT_SCHEMA_VERSION,))
+    else:
+        conn.execute("UPDATE schema_version SET version = ?", (CURRENT_SCHEMA_VERSION,))
+    conn.commit()
+
+
 def init_db(db_path: Path | str | None = None) -> None:
-    """Create all tables if they don't exist and stamp the schema version."""
+    """Create all tables if they don't exist, migrate old ones, stamp the version."""
     with get_connection(db_path) as conn:
-        conn.executescript(SCHEMA_PATH.read_text())
-        row = conn.execute("SELECT version FROM schema_version").fetchone()
-        if row is None:
-            conn.execute(
-                "INSERT INTO schema_version (version) VALUES (?)",
-                (CURRENT_SCHEMA_VERSION,),
-            )
+        _apply_schema(conn)
 
 
 # --- Dataclasses -------------------------------------------------------
@@ -101,6 +123,7 @@ class AudioFeatures:
     energy: Optional[float] = None
     analyzer_version: int = config.ANALYZER_VERSION
     analyzed_at: str = field(default_factory=_now)
+    audio_source: str = "full_mix"
 
 
 @dataclass
@@ -259,10 +282,12 @@ def get_tags(track_id: int) -> list[Tag]:
 def upsert_audio_features(features: AudioFeatures) -> None:
     sql = """
         INSERT INTO audio_features
-            (track_id, bpm_verified, bpm_confidence, key, camelot, energy, analyzer_version, analyzed_at)
+            (track_id, audio_source, bpm_verified, bpm_confidence, key, camelot, energy,
+             analyzer_version, analyzed_at)
         VALUES
-            (:track_id, :bpm_verified, :bpm_confidence, :key, :camelot, :energy, :analyzer_version, :analyzed_at)
-        ON CONFLICT(track_id) DO UPDATE SET
+            (:track_id, :audio_source, :bpm_verified, :bpm_confidence, :key, :camelot, :energy,
+             :analyzer_version, :analyzed_at)
+        ON CONFLICT(track_id, audio_source) DO UPDATE SET
             bpm_verified = excluded.bpm_verified,
             bpm_confidence = excluded.bpm_confidence,
             key = excluded.key,
@@ -276,6 +301,7 @@ def upsert_audio_features(features: AudioFeatures) -> None:
             sql,
             {
                 "track_id": features.track_id,
+                "audio_source": features.audio_source,
                 "bpm_verified": features.bpm_verified,
                 "bpm_confidence": features.bpm_confidence,
                 "key": features.key,
@@ -287,10 +313,11 @@ def upsert_audio_features(features: AudioFeatures) -> None:
         )
 
 
-def get_audio_features(track_id: int) -> Optional[AudioFeatures]:
+def get_audio_features(track_id: int, audio_source: str = "full_mix") -> Optional[AudioFeatures]:
     with get_connection() as conn:
         row = conn.execute(
-            "SELECT * FROM audio_features WHERE track_id = ?", (track_id,)
+            "SELECT * FROM audio_features WHERE track_id = ? AND audio_source = ?",
+            (track_id, audio_source),
         ).fetchone()
         if row is None:
             return None
@@ -303,6 +330,59 @@ def get_audio_features(track_id: int) -> Optional[AudioFeatures]:
             energy=row["energy"],
             analyzer_version=row["analyzer_version"],
             analyzed_at=row["analyzed_at"],
+            audio_source=row["audio_source"],
+        )
+
+
+# --- Instrumental links (positive AND negative cache) -------------------------
+
+
+@dataclass
+class InstrumentalLink:
+    track_id: int
+    found: bool
+    source: Optional[str] = None  # "deezer" | "itunes"
+    source_track_id: Optional[str] = None
+    title: Optional[str] = None
+    artist: Optional[str] = None
+    duration: Optional[int] = None
+    confidence: Optional[float] = None
+    checked_at: str = field(default_factory=_now)
+
+
+def upsert_instrumental_link(link: InstrumentalLink) -> None:
+    sql = """
+        INSERT INTO instrumental_links
+            (track_id, found, source, source_track_id, title, artist, duration, confidence, checked_at)
+        VALUES (:track_id, :found, :source, :source_track_id, :title, :artist, :duration,
+                :confidence, :checked_at)
+        ON CONFLICT(track_id) DO UPDATE SET
+            found = excluded.found, source = excluded.source,
+            source_track_id = excluded.source_track_id, title = excluded.title,
+            artist = excluded.artist, duration = excluded.duration,
+            confidence = excluded.confidence, checked_at = excluded.checked_at
+    """
+    with get_connection() as conn:
+        conn.execute(sql, {**link.__dict__, "found": 1 if link.found else 0})
+
+
+def get_instrumental_link(track_id: int) -> Optional[InstrumentalLink]:
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM instrumental_links WHERE track_id = ?", (track_id,)
+        ).fetchone()
+        if row is None:
+            return None
+        return InstrumentalLink(
+            track_id=row["track_id"],
+            found=bool(row["found"]),
+            source=row["source"],
+            source_track_id=row["source_track_id"],
+            title=row["title"],
+            artist=row["artist"],
+            duration=row["duration"],
+            confidence=row["confidence"],
+            checked_at=row["checked_at"],
         )
 
 

@@ -169,8 +169,8 @@ API keys never reach the browser -- every external call happens server-side.
 | `POST /api/match` `{seed_id}` | Starts a match run, returns `{job_id}` |
 | `GET /api/match/{job_id}` | Poll: `status` (queued/running/done/error), `progress` text, `result` (seed + up to `RESULT_POOL` scored results) when done |
 | `GET /api/preview/{track_id}` | Streams a fresh Deezer preview server-side (never hands the browser a raw signed URL) |
-| `POST /api/mix-snippet` `{a_id, b_id, style, length_seconds}` | Cache hit: `{job_id: null, snippet_url}` immediately. Otherwise `{job_id, snippet_url: null}` -- poll it |
-| `GET /api/mix-snippet/{job_id}` | Poll: same shape as `/api/match/{job_id}`; `result` has `snippet_url`, `warnings`, and the honest limitations `note` |
+| `POST /api/mix-snippet` `{a_id, b_id, style, length_seconds, source, window_rank}` | `source` is `auto`/`instrumental`/`beat_view`/`full_mix`; `window_rank` 0-2. Cache hit: `{job_id: null, snippet_url, ...info}`. Otherwise `{job_id, snippet_url: null}` -- poll it |
+| `GET /api/mix-snippet/{job_id}` | Poll: same shape as `/api/match/{job_id}`; `result` has `snippet_url`, per-song `a`/`b` (audio source, matched instrumental, BPM on that audio vs full mix, beat-grid change), the top-3 `windows`, `alignment`, `warnings` (flags plus plain-language `messages`), and the limitations `note` |
 | `GET /api/snippet/{id}.mp3` | Serves a rendered snippet |
 | `POST /api/shutdown` | Cleanly stops the server (self-SIGTERM after responding) -- used by the Quit Cue button and `cue.py stop` |
 
@@ -260,7 +260,25 @@ the file directly for the full history. It rotates automatically past 5MB
   track; a raw CLI/script call with `limit=1` does not have that safety
   net.
 
-## Mix snippets
+## Preview mix: instrumental and beat view
+
+The results list and players always play the **real songs**. Only **Preview mix** uses different audio, so you hear the beats rather than the words. For each of the two songs it picks, in order:
+
+1. **Instrumental** — an *official* instrumental found on Deezer, then iTunes (looked up only when you click Preview mix, never for all results). It is accepted only if the title says "instrumental" and matches the original, the artist matches, and the duration is close; karaoke, tribute, cover, "in the style of", lullaby/piano/orchestral versions and remixes are rejected. The matched title is shown so you can verify it. Results, including "none found", are cached (`instrumental_links`; "none" is re-checked after 30 days).
+2. **Beat view: drums and low end** — if no official instrumental exists: librosa percussive separation plus the original's low end below 120 Hz. No ML, no Demucs.
+3. **Full mix** — only if the beat view fails.
+
+The panel lets you switch Auto / Instrumental / Beat view / Full mix and choose between the **top 3 window pairs** (where inside the two clips the blend happens, ranked by drum-pattern similarity, energy match, tempo stability and density). Tempo and key analysis run on the *chosen* audio and are stored per source; the match score still uses the full-mix analysis. The blend is a whole number of beats (8 or 16) with an equal-power crossfade and a bass swap.
+
+Warnings are shown in plain language: tempo change inside a clip (possible beat switch), different feels (half/double time, drum density), low BPM confidence, key clash, large stretch, weak kick alignment.
+
+**Honest limits.** (1) This does **not** fix "wrong section of the song": the audio is still a ~30 s preview at a position we can't choose. A song with a beat switch can land on the wrong half, and its instrumental or beat view of that same window is still the wrong half. Instrumentals make the beat clearer; they don't move the window. (2) Official instrumentals don't exist for every song. (3) The beat view is thin (no melody) and leaks some vocal consonants; it shows whether grooves lock, not how the full blend sounds. (4) Preview audio is temp-only and wiped on shutdown; nothing but analysis numbers and links is stored.
+
+*Beat view low end:* `BEATVIEW_ADD_LOW_END` in `config.py` (default on). With it off you get drums only (kick/hat/clap, ~6-14% of energy below 120 Hz); with it on the kick and bass are present (~17-42%), which trap-style beats need. I could not listen, so please compare by ear and set the default you prefer.
+
+**Planned upgrade (not built):** drag in the two full audio files for one pair; Cue analyzes the tempo map and sections, matches sections, deletes the audio and caches only the analysis. The renderer only needs (audio, sample rate, analysis) per song, so this fits without redesign.
+
+## Mix snippets (blend styles)
 
 "Preview mix" generates a 10-15s sample of how the seed and a result
 might blend: tempo-matches (respecting half/double-time), picks a

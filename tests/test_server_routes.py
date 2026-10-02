@@ -140,3 +140,27 @@ def test_refine_match_happy_path(client, monkeypatch):
     assert poll["status"] == "done"
     assert poll["result"]["term"] == "house"
     assert poll["result"]["results"] == []
+
+
+def test_mix_snippet_rejects_unknown_source(client):
+    resp = client.post("/api/mix-snippet", json={"a_id": 1, "b_id": 2, "source": "vocals_only"})
+    assert resp.status_code == 400
+
+
+def test_mix_snippet_cache_hit_returns_full_contract(client, tmp_path, monkeypatch):
+    from mixing import render
+    import json
+
+    monkeypatch.setattr(render, "SNIPPET_DIR", tmp_path)
+    key = render.snippet_cache_key(1, 2, "blend", 12, "auto", 0)
+    (tmp_path / f"{key}.mp3").write_bytes(b"x")
+    (tmp_path / f"{key}.json").write_text(json.dumps({"a": {}, "b": {}, "windows": [], "window_rank": 0, "note": "n"}))
+    body = client.post("/api/mix-snippet", json={"a_id": 1, "b_id": 2}).json()
+    assert body["job_id"] is None
+    assert body["snippet_url"] == f"/api/snippet/{key}.mp3"
+    assert {"a", "b", "windows", "window_rank", "note"} <= set(body)
+
+
+def test_static_files_are_served_no_cache(client):
+    assert client.get("/").headers.get("cache-control") == "no-cache"
+    assert client.get("/app.js").headers.get("cache-control") == "no-cache"

@@ -10,7 +10,7 @@ import librosa
 import numpy as np
 
 
-def _split_bands(y: np.ndarray, sr: int, cutoff_hz: float = 250.0) -> tuple[np.ndarray, np.ndarray]:
+def split_bands(y: np.ndarray, sr: int, cutoff_hz: float = 250.0) -> tuple[np.ndarray, np.ndarray]:
     """Crude brick-wall low/high split via FFT bin zeroing -- good enough
     for a short personal-use snippet, not audiophile-grade filtering."""
     stft = librosa.stft(y)
@@ -40,8 +40,8 @@ def blend(a: np.ndarray, b: np.ndarray, sr: int) -> np.ndarray:
     a, b = a[:n], b[:n]
     fade_out, fade_in = _equal_power_fade(n)
 
-    low_a, high_a = _split_bands(a, sr)
-    low_b, high_b = _split_bands(b, sr)
+    low_a, high_a = split_bands(a, sr)
+    low_b, high_b = split_bands(b, sr)
 
     # Bass swaps over the first 60% of the blend (faster than the overall
     # fade) so the low end doesn't clash for the whole transition.

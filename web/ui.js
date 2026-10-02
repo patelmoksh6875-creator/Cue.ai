@@ -76,22 +76,68 @@ export function renderResultsNote(container, shownCount, totalMatchingFilter, re
   container.hidden = true;
 }
 
-export function renderMixNote(container, note, warnings) {
-  container.hidden = false;
-  container.className = "results-note";
-  container.textContent = "";
-  if (note) container.appendChild(el("div", null, note));
-  if (warnings?.key_incompatible) {
-    container.appendChild(el("div", "mix-warning", "⚠ Keys are not close on the Camelot wheel -- expect clashing."));
-  }
-  if (warnings?.stretch_exceeds_quality) {
-    container.appendChild(
-      el("div", "mix-warning", `⚠ Tempo stretch was ${Math.round(warnings.stretch_pct * 100)}% -- quality may be degraded.`)
+const SOURCE_CHOICES = [
+  ["auto", "Auto"],
+  ["instrumental", "Instrumental"],
+  ["beat_view", "Beat view"],
+  ["full_mix", "Full mix"],
+];
+
+function sourceLine(song) {
+  const line = el("div", "mix-song");
+  line.appendChild(el("strong", null, `${song.title}: `));
+  line.appendChild(el("span", null, song.source_label));
+  if (song.instrumental) {
+    line.appendChild(
+      el("div", "mix-sub", `Matched instrumental: ${song.instrumental.title} \u2014 ${song.instrumental.artist} (${song.instrumental.from})`)
     );
   }
-  if (warnings?.low_confidence_bpm) {
-    container.appendChild(el("div", "mix-warning", "⚠ Low-confidence BPM on one track -- the snippet may sound off-grid even for a good pair."));
+  const bpm = el("div", "mix-sub",
+    `Tempo on this audio: ${song.bpm_chosen} BPM (full mix: ${song.bpm_full_mix})` +
+    (song.bpm_changed ? " \u2014 changed" : "") +
+    (song.beat_grid_changed ? "; beat grid differs from the full mix" : ""));
+  line.appendChild(bpm);
+  return line;
+}
+
+// Mix panel: sources used, toggle, window choices, analysis, warnings and
+// the honest limitation note. Text only via textContent (API strings).
+export function renderMixPanel(container, result, selected, handlers) {
+  container.textContent = "";
+  container.hidden = false;
+  container.appendChild(el("div", "mix-title", "Mix preview"));
+  container.appendChild(sourceLine(result.a));
+  container.appendChild(sourceLine(result.b));
+
+  const row = el("div", "mix-row");
+  row.appendChild(el("span", "mix-label", "Audio"));
+  for (const [value, label] of SOURCE_CHOICES) {
+    const b = el("button", "btn btn-ghost" + (value === selected.source ? " is-on" : ""), label);
+    b.type = "button";
+    b.setAttribute("aria-pressed", String(value === selected.source));
+    b.addEventListener("click", () => handlers.onSource(value));
+    row.appendChild(b);
   }
+  container.appendChild(row);
+
+  const wrow = el("div", "mix-row");
+  wrow.appendChild(el("span", "mix-label", "Window"));
+  for (const w of result.windows) {
+    const b = el("button", "btn btn-ghost" + (w.rank === result.window_rank ? " is-on" : ""),
+      `${w.rank + 1} (${Math.round(w.score * 100)}%)`);
+    b.type = "button";
+    b.title = `A from ${w.a_start}s, B from ${w.b_start}s; kick-pattern match ${Math.round(w.drum_corr * 100)}%`;
+    b.addEventListener("click", () => handlers.onWindow(w.rank));
+    wrow.appendChild(b);
+  }
+  container.appendChild(wrow);
+
+  container.appendChild(el("div", "mix-sub",
+    `Transition: ${result.blend_beats} beats. Kick alignment: ${Math.round(result.alignment.kick_corr * 100)}%` +
+    (result.alignment.well_aligned ? "" : " (weak)")));
+
+  for (const m of result.warnings.messages) container.appendChild(el("div", "mix-warning", `Note: ${m}`));
+  container.appendChild(el("div", "mix-note", result.note));
 }
 
 // Dropdown suggestions while typing in the filter box. `suggestions` is
