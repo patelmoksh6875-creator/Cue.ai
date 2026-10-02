@@ -8,49 +8,71 @@
 </head>
 <body>
   <header class="topbar">
-    <div class="brand">🎧 Cue</div>
+    <div class="brand" aria-label="Cue">
+      <span class="mark mark-sm" aria-hidden="true">
+        <i class="mark-layer mark-l3"></i><i class="mark-layer mark-l2"></i>
+        <i class="mark-layer mark-front">
+          <svg viewBox="0 0 24 24"><path d="M8 6.5v11l9-5.5z" fill="#2B3540"/><rect x="5" y="4" width="1.8" height="16" rx=".9" fill="#2B3540"/></svg>
+        </i>
+      </span>
+      <span class="wordmark">Cue</span>
+    </div>
     <div id="status" class="status" aria-live="polite"></div>
-    <button id="quit-btn" class="btn btn-ghost" title="Stop the Cue server">Quit Cue</button>
+    <button id="quit-btn" class="btn btn-quiet" title="Stop the Cue server">Quit</button>
   </header>
 
   <main class="layout">
-    <section class="seed-panel">
-      <label for="search-input" class="field-label">Seed song</label>
-      <div class="search-row">
-        <input id="search-input" type="text" placeholder="Search for a song..." autocomplete="off">
-      </div>
-      <ul id="search-results" class="search-results" hidden></ul>
+    <section class="hero" id="hero">
+      <span class="mark mark-lg" aria-hidden="true">
+        <i class="mark-layer mark-l3"></i><i class="mark-layer mark-l2"></i>
+        <i class="mark-layer mark-front">
+          <svg viewBox="0 0 24 24"><path d="M8 6.5v11l9-5.5z" fill="#2B3540"/><rect x="5" y="4" width="1.8" height="16" rx=".9" fill="#2B3540"/></svg>
+        </i>
+      </span>
+      <h1 class="hero-word">Cue</h1>
+      <p class="hero-sub">Pick a song. Find what mixes with it.</p>
+    </section>
 
-      <div id="seed-card" class="seed-card" hidden></div>
+    <section class="seed-panel">
+      <label for="search-input" class="sr-only">Seed song</label>
+      <div class="search-pill">
+        <svg class="search-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5" fill="none" stroke="#4A5866" stroke-width="2"/><path d="M16 16l4.5 4.5" stroke="#4A5866" stroke-width="2" stroke-linecap="round"/></svg>
+        <input id="search-input" type="text" placeholder="Search for a seed song" autocomplete="off">
+        <kbd class="kbd" aria-hidden="true">Enter</kbd>
+      </div>
+      <ul id="search-results" class="search-results glass" hidden></ul>
+
+      <div id="seed-card" class="seed-card glass" hidden></div>
 
       <button id="find-matches-btn" class="btn btn-primary" hidden>Find matches</button>
       <div id="match-progress" class="progress-text" hidden></div>
     </section>
 
-    <section id="filter-bar" class="filter-bar" hidden>
+    <section id="filter-bar" class="filter-bar glass" hidden>
       <div class="filter-search-row">
         <input
           id="filter-input"
           type="text"
-          placeholder="Filter by artist or genre... (press / to focus)"
+          placeholder="Filter by artist or genre (press / to focus)"
+          aria-label="Filter by artist or genre"
           autocomplete="off"
           role="combobox"
           aria-expanded="false"
           aria-controls="filter-suggestions"
           aria-autocomplete="list">
-        <ul id="filter-suggestions" class="filter-suggestions" hidden role="listbox"></ul>
+        <ul id="filter-suggestions" class="filter-suggestions glass" hidden role="listbox"></ul>
       </div>
       <div id="filter-chips" class="chip-list" aria-label="Active filters"></div>
       <div class="filter-row-bottom">
         <div class="sort-group">
-          <span class="field-label">Sort by</span>
+          <label for="sort-select" class="sort-label">Sort by</label>
           <select id="sort-select">
-            <option value="match_pct">Match %</option>
+            <option value="match_pct">Match</option>
             <option value="bpm">BPM</option>
             <option value="key">Key</option>
           </select>
         </div>
-        <button id="clear-filters-btn" class="btn btn-ghost" hidden>Clear all</button>
+        <button id="clear-filters-btn" class="btn btn-quiet" hidden>Clear all</button>
       </div>
     </section>
 
@@ -58,12 +80,12 @@
     <section id="results" class="results" aria-live="polite"></section>
   </main>
 
-  <audio id="player" hidden></audio>
+  <audio id="player" controls hidden></audio>
 
   <div id="offline-overlay" class="offline-overlay" hidden role="alert">
-    <div class="offline-box">
+    <div class="offline-box glass">
       <div class="offline-title">Cue isn't running</div>
-      <div class="offline-body">Open it again from Cue.app, or run <code>python cue.py</code>.</div>
+      <div class="offline-body">Run <code>python cue.py</code> again, then reload this page. It reconnects on its own once the server is back.</div>
     </div>
   </div>
 

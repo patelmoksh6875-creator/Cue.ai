@@ -129,11 +129,11 @@ async function searchWider(term) {
 
 function playPreview(trackId, button) {
   if (state.activePlayButton && state.activePlayButton !== button) {
-    state.activePlayButton.textContent = "▶ Preview";
+    state.activePlayButton.textContent = "Play";
   }
   if (els.player.dataset.trackId === String(trackId) && !els.player.paused) {
     els.player.pause();
-    button.textContent = "▶ Preview";
+    button.textContent = "Play";
     state.activePlayButton = null;
     return;
   }
@@ -141,12 +141,12 @@ function playPreview(trackId, button) {
   els.player.dataset.trackId = String(trackId);
   els.player.hidden = false;
   els.player.play();
-  button.textContent = "⏸ Pause";
+  button.textContent = "Pause";
   state.activePlayButton = button;
 }
 
 els.player.addEventListener("ended", () => {
-  if (state.activePlayButton) state.activePlayButton.textContent = "▶ Preview";
+  if (state.activePlayButton) state.activePlayButton.textContent = "Play";
   state.activePlayButton = null;
 });
 
@@ -204,6 +204,7 @@ async function runSearch(query) {
 }
 
 function pickSeed(result) {
+  document.body.classList.add("has-seed");
   state.seedId = result.id;
   els.searchInput.value = `${result.title} — ${result.artist}`;
   els.searchResults.hidden = true;

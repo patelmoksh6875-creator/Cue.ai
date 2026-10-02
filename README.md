@@ -45,6 +45,8 @@ One command, from the project root:
 python cue.py
 ```
 
+It starts the server in the background and prints a URL (`http://127.0.0.1:8765`) — copy and paste it into any browser. This works from an IDE's run button too. `python cue.py --open` also opens the browser for you.
+
 (A terminal can't literally run `run cue.py` — the command is `python cue.py`.)
 
 This starts the Cue server as a **detached background process** (using the
@@ -369,3 +371,7 @@ pytest
 against mocked responses, candidate discovery/fuzzy-matching, the Groq
 agent's deterministic fallback path, the launcher's pure/file-based
 logic, and the mix snippet maker's DSP functions.)
+
+## Look and feel
+
+Off-white ground, matte glass surfaces, one amber accent, Avenir Next (ships with macOS, falls back to system fonts). Text colours are chosen for contrast (primary 11:1, secondary 6.5:1 on the background). Percent match is shown as a number inside an amber ring, never colour alone. The layered glass mark is plain CSS/SVG in `web/index.html` and `web/styles.css`. Tested in Chrome-based preview at desktop and phone widths; not tested in Safari, and `Cue.icns` (app icon) has not been generated yet.

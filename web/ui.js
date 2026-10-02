@@ -177,14 +177,19 @@ export function renderResults(container, results, { onPlayPreview, onPreviewMix 
     main.appendChild(meta);
     card.appendChild(main);
 
-    const matchBox = el("div", `match-box match-${matchBand(r.match_pct)}`);
-    matchBox.appendChild(el("div", "match-pct", `${r.match_pct}%`));
-    matchBox.appendChild(el("div", "match-label", "match"));
+    const matchBox = el("div", "match-box");
+    matchBox.style.setProperty("--pct", String(r.match_pct));
+    const inner = el("div", "match-inner");
+    inner.appendChild(el("div", "match-pct", `${r.match_pct}%`));
+    inner.appendChild(el("div", "match-label", "match"));
+    matchBox.appendChild(inner);
+    matchBox.setAttribute("role", "img");
+    matchBox.setAttribute("aria-label", `${r.match_pct} percent match`);
     matchBox.title = "Relative match score from weighted factors, not a probability the mix will sound good.";
     card.appendChild(matchBox);
 
     const actions = el("div", "result-actions");
-    const playBtn = el("button", "btn btn-ghost", "▶ Preview");
+    const playBtn = el("button", "btn btn-ghost", "Play");
     playBtn.type = "button";
     playBtn.addEventListener("click", () => onPlayPreview(r.id, playBtn));
     actions.appendChild(playBtn);
